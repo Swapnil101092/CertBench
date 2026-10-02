@@ -52,8 +52,11 @@ button:focus-visible, input:focus-visible{ outline:2px solid var(--accent); outl
 .btn-danger:hover{ background:rgba(242,84,91,.08); }
 
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:1.1rem clamp(1rem,4vw,2.5rem); border-bottom:1px solid var(--hairline); flex-wrap:wrap; gap:.75rem; }
-.brand{ display:flex; align-items:center; gap:.6rem; font-weight:700; font-size:1.05rem; }
-.brand-mark{ width:1.6rem; height:1.6rem; border-radius:7px; background:var(--accent-gradient); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:.7rem; font-weight:600; color:var(--on-accent); }
+.brand{ display:flex; align-items:center; gap:.6rem; font-size:1.1rem; }
+.brand-word{ font-weight:400; letter-spacing:-.01em; color:var(--text); }
+.brand-word strong{ font-weight:700; }
+.brand-suffix{ color:var(--text-dim); font-weight:500; }
+.brand-mark{ width:1.75rem; height:1.75rem; border-radius:7px; display:block; flex-shrink:0; }
 .theme-toggle{ font-size:.8rem; color:var(--text-dim); border:1px solid var(--panel-border); border-radius:var(--radius); padding:.4em .8em; }
 .theme-toggle:hover{ color:var(--text); border-color:var(--accent); }
 
@@ -72,7 +75,9 @@ main{ flex:1; display:flex; flex-direction:column; }
   background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.25), transparent 45%);
 }
 .auth-visual-brand{ display:flex; align-items:center; gap:.7rem; font-weight:700; font-size:1.2rem; position:relative; }
-.auth-visual-brand .brand-mark{ width:2.1rem; height:2.1rem; background:rgba(255,255,255,.9); }
+.auth-visual-brand .brand-mark{ width:2.1rem; height:2.1rem; border-radius:9px; box-shadow:0 2px 8px rgba(28,18,7,.25); }
+.auth-visual-brand .brand-word{ color:inherit; }
+.auth-visual-brand .brand-suffix{ color:inherit; }
 .auth-visual-tagline{ font-size:1.7rem; font-weight:700; line-height:1.3; max-width:20ch; position:relative; }
 .auth-visual-features{ display:flex; flex-direction:column; gap:.75rem; position:relative; }
 .auth-visual-features div{ display:flex; align-items:center; gap:.65em; font-size:.92rem; font-weight:500; }
@@ -420,8 +425,8 @@ a.landing-signin-link{ color:var(--text-dim); }
   display:flex; flex-direction:column; align-items:center; gap:.7rem; text-align:center;
 }
 .orbit-core-mark{
-  width:5.4rem; height:5.4rem; border-radius:1.5rem; background:var(--accent-gradient); color:var(--on-accent);
-  display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:1.7rem; font-weight:700;
+  width:5.4rem; height:5.4rem; border-radius:1.5rem; display:block;
+  box-shadow:0 6px 24px rgba(27,37,89,.35);
   animation: core-pulse 3.2s ease-in-out infinite;
 }
 .orbit-core-text{ font-family:var(--mono); font-size:.74rem; color:var(--text-dim); letter-spacing:.03em; }
@@ -471,7 +476,7 @@ a.landing-signin-link{ color:var(--text-dim); }
   .orbit-dense .orbit-chip .exam-chip-badge{ font-size:.6rem; }
   .orbit-chip-name{ display:none; }        /* phones: badges only, so they never crowd each other */
   .orbit-chip{ padding:.4em; }
-  .orbit-core-mark{ width:4.4rem; height:4.4rem; font-size:1.4rem; }
+  .orbit-core-mark{ width:4.4rem; height:4.4rem; }
 }
 @media (prefers-reduced-motion: reduce){
   .orbit, .orbit-badge-inner, .orbit-core-mark, .auth-marquee-track{ animation:none; }

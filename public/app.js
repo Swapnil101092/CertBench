@@ -68,6 +68,13 @@ function el(tag, attrs, children){
   return e;
 }
 
+// ---- CertBench logo: the mark (bench + check) and the "CertBench" wordmark ----
+function brandMark(){ return el('img',{class:'brand-mark', src:'/logo-mark.svg', alt:'', width:'28', height:'28'}); }
+function brandWord(suffix){
+  return el('span',{class:'brand-word'},[ el('strong',{},['Cert']), 'Bench', suffix ? el('span',{class:'brand-suffix'},[' ' + suffix]) : null ]);
+}
+function brandLogo(){ return el('div',{class:'brand', role:'img', 'aria-label':'CertBench'},[ brandMark(), brandWord() ]); }
+
 function topbar(){
   const saved = safeGetLS('certbench-theme');
   const right = [];
@@ -94,7 +101,7 @@ function topbar(){
   }
   right.push(el('button',{class:'theme-toggle', onclick:toggleTheme},[saved==='light' ? 'Dark mode' : 'Light mode']));
   return el('div',{class:'topbar'},[
-    el('div',{class:'brand'},[ el('div',{class:'brand-mark'},['CB']), el('span',{},['CertBench']) ]),
+    brandLogo(),
     el('div',{style:'display:flex;gap:.9rem;align-items:center;'}, right)
   ]);
 }
@@ -313,7 +320,7 @@ function renderOrbit(){
   stage.appendChild(el('div',{class:'orbit-ring', 'aria-hidden':'true'}));
   stage.appendChild(el('div',{class:'orbit-ring orbit-ring-inner', 'aria-hidden':'true'}));
   stage.appendChild(el('div',{class:'orbit-core', 'aria-hidden':'true'},[
-    el('div',{class:'orbit-core-mark'},['CB']),
+    el('img',{class:'orbit-core-mark', src:'/logo-mark.svg', alt:''}),
     el('div',{class:'orbit-core-text'},[n ? plural(n, 'certification') : 'New exams coming soon'])
   ]));
   const orbit = el('div',{class:'orbit', 'aria-hidden':'true'});
@@ -421,7 +428,7 @@ function renderLanding(){
     authLink('register','pill-btn pill-register',['Register'])
   ]);
   const header = el('div',{class:'landing-header'},[
-    el('div',{class:'brand'},[ el('div',{class:'brand-mark'},['CB']), el('span',{},['CertBench']) ]),
+    brandLogo(),
     nav,
     headerActions
   ]);
@@ -511,7 +518,7 @@ function renderLanding(){
 function renderAuthVisual(){
   const panel = el('div',{class:'auth-visual-col'});
   panel.appendChild(el('div',{class:'auth-visual-brand'},[
-    el('div',{class:'brand-mark'},['CB']), el('span',{},['CertBench'])
+    brandMark(), brandWord()
   ]));
   panel.appendChild(el('div',{class:'auth-visual-tagline'},['Practice mock exams. Walk in ready.']));
   panel.appendChild(el('div',{class:'auth-visual-features'},[

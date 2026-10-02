@@ -30,6 +30,14 @@ function el(tag, attrs, children){
   if(pendingValue !== undefined) node.value = pendingValue;   // after children, so <select> can find its option
   return node;
 }
+
+// CertBench logo with an "Admin" label (same mark as the main site)
+function brandLogo(){
+  return el('div', { class: 'brand', role: 'img', 'aria-label': 'CertBench Admin' }, [
+    el('img', { class: 'brand-mark', src: '/logo-mark.svg', alt: '', width: '28', height: '28' }),
+    el('span', { class: 'brand-word' }, [ el('strong', {}, ['Cert']), 'Bench', el('span', { class: 'brand-suffix' }, [' Admin']) ])
+  ]);
+}
 function clear(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 function getToken(){ try{ return localStorage.getItem(TOKEN_KEY); }catch(e){ return null; } }
 function rupees(n){ return n > 0 ? '\u20b9' + Number(n).toLocaleString('en-IN') : 'Free'; }
@@ -92,7 +100,7 @@ function renderGate(kind){
   };
   var m = msgs[kind];
   var card = el('div', { class: 'adm-gate' }, [
-    el('div', { class: 'brand' }, [ el('div', { class: 'brand-mark' }, ['CB']), el('span', {}, ['CertBench Admin']) ]),
+    brandLogo(),
     el('h1', {}, [m[0]]),
     el('p', {}, [m[1]])
   ]);
@@ -114,7 +122,7 @@ function header(){
     return el('button', { class: 'adm-tab' + (active ? ' active' : ''), type: 'button', onclick: function(){ navigate(view); } }, [label]);
   }
   return el('header', { class: 'adm-top' }, [
-    el('div', { class: 'brand' }, [ el('div', { class: 'brand-mark' }, ['CB']), el('span', {}, ['CertBench Admin']) ]),
+    brandLogo(),
     el('nav', { class: 'adm-nav', 'aria-label': 'Admin sections' }, [
       tab('overview', 'Overview', ['overview']),
       tab('exams', 'Certificates', ['exams', 'exam', 'exam-new']),
