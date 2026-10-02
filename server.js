@@ -86,7 +86,7 @@ app.listen(PORT, () => {
   if(admins.length && adminEmailsActive()){
     console.log(`[ADMIN] Admin panel access via ADMIN_EMAILS is ON for: ${admins.join(', ')}`);
   } else if(admins.length){
-    console.warn('[ADMIN] ADMIN_EMAILS is set but IGNORED: email sending is not configured (EMAIL_USER / EMAIL_PASS).');
+    console.warn('[ADMIN] ADMIN_EMAILS is set but IGNORED: email sending is not configured (BREVO_API_KEY + EMAIL_FROM_ADDRESS, or EMAIL_USER / EMAIL_PASS).');
     console.warn('[ADMIN] Without real email, login codes are shown on screen, so anyone could sign in as that address.');
     console.warn('[ADMIN] Configure email, or use `npm run make-admin -- <username>` from a shell on the server.');
   }
