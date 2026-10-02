@@ -809,7 +809,7 @@ function celebrateSuccess(attemptId){
   if(lastCelebratedAttemptId === attemptId) return; // don't re-burst on every re-render of the same result
   lastCelebratedAttemptId = attemptId;
 
-  const colors = ['#22c9a3', '#f7a83f', '#34d399', '#f2545b', '#ffffff'];
+  const colors = ['#4257c4', '#8a9cf0', '#5cb88f', '#d2a15a', '#c9cfdc'];
   const overlay = el('div',{class:'confetti-overlay'});
   const pieceCount = 60;
   for(let i = 0; i < pieceCount; i++){
