@@ -22,13 +22,29 @@
 // etc.) instead of Gmail, also set EMAIL_HOST / EMAIL_PORT / EMAIL_SECURE
 // in .env — see .env.example for the exact fields.
 
-function isConfigured(){
+// ---- Option 1 (recommended on Railway): Brevo's HTTPS email API ----
+// Railway blocks outbound SMTP (ports 25/465/587) on its Free, Trial and Hobby
+// plans, so Gmail SMTP just hangs there. Brevo sends over normal HTTPS instead
+// and has a free tier. Set:
+//   BREVO_API_KEY=xkeysib-...           (Brevo → SMTP & API → API keys)
+//   EMAIL_FROM_ADDRESS=you@gmail.com    (a sender you verified in Brevo → Senders)
+//   EMAIL_FROM_NAME=CertBench           (optional)
+function brevoConfigured(){
+  return !!(process.env.BREVO_API_KEY && (process.env.EMAIL_FROM_ADDRESS || process.env.EMAIL_USER));
+}
+
+// ---- Option 2: SMTP (Gmail app password or any SMTP host) ----
+function smtpConfigured(){
   return !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+}
+
+function isConfigured(){
+  return brevoConfigured() || smtpConfigured();
 }
 
 let transporter = null;
 function getTransporter(){
-  if(!isConfigured()) return null;
+  if(!smtpConfigured()) return null;
   if(!transporter){
     const nodemailer = require('nodemailer');
     if(process.env.EMAIL_HOST){
@@ -36,13 +52,17 @@ function getTransporter(){
         host: process.env.EMAIL_HOST,
         port: Number(process.env.EMAIL_PORT || 587),
         secure: process.env.EMAIL_SECURE === 'true',
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000
       });
     } else {
       // Gmail shorthand — nodemailer knows the right host/port for it.
       transporter = nodemailer.createTransport({
         service: 'gmail',
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        // Fail in seconds instead of minutes if the host blocks SMTP,
+        // so the sign-in button shows an error rather than spinning.
+        connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000
       });
     }
   }
@@ -65,7 +85,30 @@ async function sendPasswordResetEmail(toEmail, code){
   });
 }
 
+async function sendViaBrevo(toEmail, subject, text, html){
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      sender: { name: process.env.EMAIL_FROM_NAME || 'CertBench', email: process.env.EMAIL_FROM_ADDRESS || process.env.EMAIL_USER },
+      to: [{ email: toEmail }],
+      subject, textContent: text, htmlContent: html
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+  const body = await res.text();
+  if(!res.ok) throw new Error(`Brevo API ${res.status}: ${body.slice(0, 300)}`);
+  console.log(`[EMAIL] Sent via Brevo to ${toEmail} ("${subject}") — ${body.slice(0, 120)}`);
+  return { delivered: true, devFallback: false };
+}
+
 async function sendCodeEmail(toEmail, code, { subject, intro, footer }){
+  const text = `${intro} ${code}. ${footer}`;
+  const html = `<p>${intro}</p>
+           <p style="font-size:28px;font-weight:700;letter-spacing:.2em;font-family:monospace">${code}</p>
+           <p>${footer}</p>`;
+  if(brevoConfigured()) return sendViaBrevo(toEmail, subject, text, html);
+
   const t = getTransporter();
 
   if(!t){
