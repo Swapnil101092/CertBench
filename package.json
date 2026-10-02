@@ -1,0 +1,27 @@
+{
+  "name": "certbench",
+  "version": "1.0.0",
+  "description": "CertBench \u2014 timed IT certification mock exams with real accounts, SMS OTP login, and server-side grading.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node src/seed.js",
+    "dev": "node server.js",
+    "delete-user": "node src/delete-user.js",
+    "make-admin": "node src/make-admin.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.14",
+    "razorpay": "^2.9.4"
+  }
+}
