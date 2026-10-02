@@ -79,17 +79,17 @@ function topbar(){
   const saved = safeGetLS('certbench-theme');
   const right = [];
   if(state.currentUser){
-    const nameSpan = el('span',{style:'font-size:.85rem;color:var(--text-dim);'},[state.currentUser.name]);
-    right.push(nameSpan);
+    const initial = (state.currentUser.name || '?').trim().charAt(0).toUpperCase();
+    right.push(el('span',{class:'user-chip'},[ el('span',{class:'avatar'},[initial]), el('span',{class:'user-name'},[state.currentUser.name]) ]));
     if(state.currentUser.isAdmin && state.screen !== 'exam' && state.screen !== 'review'){
-      right.push(el('a',{class:'btn-ghost btn', href:'/admin', style:'padding:.5em 1em;font-size:.82rem;'},['Admin']));
+      right.push(el('a',{class:'btn-ghost btn btn-sm', href:'/admin'},['Admin']));
     }
     if(state.screen !== 'exam' && state.screen !== 'review'){
-      const historyBtn = el('button',{class:'btn-ghost btn', style:'padding:.5em 1em;font-size:.82rem;'},['My results']);
+      const historyBtn = el('button',{class:'btn-ghost btn btn-sm'},['My results']);
       historyBtn.addEventListener('click', loadHistory);
       right.push(historyBtn);
     }
-    const signOutBtn = el('button',{class:'btn-ghost btn', style:'padding:.5em 1em;font-size:.82rem;'},['Sign out']);
+    const signOutBtn = el('button',{class:'btn-ghost btn btn-sm'},['Sign out']);
     signOutBtn.addEventListener('click', function(){
       if(state.screen === 'exam' || state.screen === 'review'){
         const ok = window.confirm('You\u2019re in the middle of a timed exam. Signing out now will discard this attempt. Sign out anyway?');
@@ -102,7 +102,7 @@ function topbar(){
   right.push(el('button',{class:'theme-toggle', onclick:toggleTheme},[saved==='light' ? 'Dark mode' : 'Light mode']));
   return el('div',{class:'topbar'},[
     brandLogo(),
-    el('div',{style:'display:flex;gap:.9rem;align-items:center;'}, right)
+    el('div',{class:'topbar-right'}, right)
   ]);
 }
 function toggleTheme(){
@@ -197,6 +197,44 @@ const ICON_MAIL = [
   { tag:'rect', attrs:{ x:'2', y:'4', width:'20', height:'16', rx:'2' } },
   { tag:'path', attrs:{ d:'m22 7-10 6L2 7' } }
 ];
+const ICON_CLOCK = [
+  { tag:'circle', attrs:{ cx:'12', cy:'12', r:'9' } },
+  { tag:'path',   attrs:{ d:'M12 7v5l3 2' } }
+];
+const ICON_GRID = [
+  { tag:'rect', attrs:{ x:'3', y:'3', width:'7', height:'7', rx:'1.5' } },
+  { tag:'rect', attrs:{ x:'14', y:'3', width:'7', height:'7', rx:'1.5' } },
+  { tag:'rect', attrs:{ x:'3', y:'14', width:'7', height:'7', rx:'1.5' } },
+  { tag:'rect', attrs:{ x:'14', y:'14', width:'7', height:'7', rx:'1.5' } }
+];
+const ICON_BOLT = [ { tag:'path', attrs:{ d:'M13 2 4 14h7l-1 8 9-12h-7l1-8z' } } ];
+const ICON_LOCK = [
+  { tag:'rect', attrs:{ x:'4', y:'11', width:'16', height:'10', rx:'2' } },
+  { tag:'path', attrs:{ d:'M8 11V7a4 4 0 0 1 7.5-2' } }
+];
+const ICON_CHART = [
+  { tag:'path', attrs:{ d:'M3 3v18h18' } },
+  { tag:'path', attrs:{ d:'m7 15 4-4 3 3 5-6' } }
+];
+const ICON_PHONE_APP = [
+  { tag:'rect', attrs:{ x:'6', y:'2', width:'12', height:'20', rx:'2.5' } },
+  { tag:'path', attrs:{ d:'M11 18h2' } }
+];
+const ICON_SHIELD = [
+  { tag:'path', attrs:{ d:'M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3z' } },
+  { tag:'path', attrs:{ d:'m9 12 2 2 4-4' } }
+];
+const ICON_ARROW = [ { tag:'path', attrs:{ d:'M5 12h14M13 6l6 6-6 6' } } ];
+const ICON_SEARCH = [
+  { tag:'circle', attrs:{ cx:'11', cy:'11', r:'7' } },
+  { tag:'path',   attrs:{ d:'m20 20-3.5-3.5' } }
+];
+const ICON_CHECK = [ { tag:'path', attrs:{ d:'m5 12 5 5L20 7' } } ];
+function icon(shapes, size){
+  const s = svgIcon(shapes);
+  if(size){ s.setAttribute('width', size); s.setAttribute('height', size); }
+  return s;
+}
 function contactCard(icon, title, valueNode){
   return el('div',{class:'contact-card'},[
     el('div',{class:'contact-icon'},[svgIcon(icon)]),
@@ -297,41 +335,61 @@ function landingExamList(){
   if(state.landingExams){   // loaded from the server (may legitimately be empty if every exam is hidden)
     return state.landingExams.map(x => {
       const known = LANDING_EXAMS.find(k => k.label === x.short_label);
-      return { label:x.short_label, short: known ? known.short : x.name, name:x.name, color:x.color, price:x.price_inr_paise };
+      return { label:x.short_label, short: known ? known.short : x.name, name:x.name, color:x.color, price:x.price_inr_paise,
+               desc:x.description || '', minutes:x.duration_minutes, sets:x.set_count, perSet:x.question_count, pass:x.pass_pct };
     });
   }
-  return LANDING_EXAMS.map(x => ({ label:x.label, short:x.short, name:x.name, color:x.color, price:null }));
+  return LANDING_EXAMS.map(x => ({ label:x.label, short:x.short, name:x.name, color:x.color, price:null, desc:'' }));
 }
 
 // ---- Moving visuals: certification badges (our own badges, not the vendors' trademarked logos) ----
+// Each exam keeps its own accent colour; CSS reads it from --c.
+function safeColor(c){ return /^#[0-9a-fA-F]{3,8}$/.test(c || '') ? c : '#7c6cff'; }
 function examBadge(x){
-  return el('span',{class:'exam-chip-badge', style:`background:${x.color}22;color:${x.color};border:1px solid ${x.color}55;`},[x.label]);
+  return el('span',{class:'exam-chip-badge', style:`--c:${safeColor(x.color)}`},[x.label]);
 }
 function examListLabel(list){
   return 'Certifications you can practice: ' + list.map(x => x.name).join(', ');
 }
 
-// Landing hero: the badges slowly orbit a glowing CertBench mark.
-function renderOrbit(){
-  const list = landingExamList();
-  const n = list.length;
-  // With more than 6 exams the name badges would start to overlap, so switch to compact badges.
-  const stage = el('div',{class:'orbit-stage' + (n > 6 ? ' orbit-dense' : ''), role:'img', 'aria-label': examListLabel(list)});
-  stage.appendChild(el('div',{class:'orbit-ring', 'aria-hidden':'true'}));
-  stage.appendChild(el('div',{class:'orbit-ring orbit-ring-inner', 'aria-hidden':'true'}));
-  stage.appendChild(el('div',{class:'orbit-core', 'aria-hidden':'true'},[
-    el('img',{class:'orbit-core-mark', src:'/logo-mark.svg', alt:''}),
-    el('div',{class:'orbit-core-text'},[n ? plural(n, 'certification') : 'New exams coming soon'])
+// Landing hero: a faithful mini-preview of the real exam screen (sample question from the Azure bank).
+function renderHeroMockup(){
+  const f = landingFacts();
+  const total = f.samePerSet && f.perSet ? f.perSet : 30;
+  const stage = el('div',{class:'mock-stage', role:'img', 'aria-label':'Preview of the CertBench exam screen'});
+  const win = el('div',{class:'mock-window', 'aria-hidden':'true'});
+  win.appendChild(el('div',{class:'mock-chrome'},[
+    el('span',{class:'mock-dot'}), el('span',{class:'mock-dot'}), el('span',{class:'mock-dot'}),
+    el('span',{class:'mock-url'},['certbench · Azure Fundamentals — Set 1'])
   ]));
-  const orbit = el('div',{class:'orbit', 'aria-hidden':'true'});
-  list.forEach((x, i)=>{
-    orbit.appendChild(el('div',{class:'orbit-item', style:`--angle:${(i * 360 / n).toFixed(2)}deg`},[
-      el('div',{class:'orbit-badge-inner'},[
-        el('div',{class:'orbit-chip'},[ examBadge(x), el('span',{class:'orbit-chip-name'},[x.short]) ])
-      ])
-    ]));
+  const body = el('div',{class:'mock-body'});
+  body.appendChild(el('div',{class:'mock-top'},[
+    el('span',{class:'mock-q'},['Question 7 of ' + total]),
+    el('span',{class:'mock-timer'},[el('i',{}), '42:18'])
+  ]));
+  body.appendChild(el('div',{class:'mock-progress'},[ el('span',{style:`width:${Math.round(7/total*100)}%`}) ]));
+  body.appendChild(el('p',{class:'mock-text'},['What is the purpose of an Azure Resource Manager (ARM) template?']));
+  [
+    'Defining infrastructure in a JSON file for repeatable deployments',
+    'Storing application secrets',
+    'Hosting a virtual machine directly'
+  ].forEach((t, i)=>{
+    body.appendChild(el('div',{class:'mock-opt' + (i===0 ? ' on' : '')},[ el('b',{},[String.fromCharCode(65+i)]), el('span',{},[t]) ]));
   });
-  stage.appendChild(orbit);
+  const pal = el('div',{class:'mock-palette'});
+  for(let i=0;i<Math.min(total,30);i++){
+    pal.appendChild(el('span',{class: i===3 ? 's' : i<6 ? 'a' : i===6 ? 'c' : ''}));
+  }
+  body.appendChild(pal);
+  win.appendChild(body);
+  stage.appendChild(win);
+  stage.appendChild(el('div',{class:'mock-float mock-float-score', 'aria-hidden':'true'},[
+    el('div',{class:'mini-ring'},[ el('span',{},['86%']) ]),
+    el('div',{},[ el('div',{class:'mock-float-title'},['Sample result']), el('div',{class:'mock-float-sub'},['Set 1 · Pass']) ])
+  ]));
+  stage.appendChild(el('div',{class:'mock-float mock-float-graded', 'aria-hidden':'true'},[
+    el('span',{class:'mock-float-icon'},[icon(ICON_BOLT, 16)]), 'Graded the moment you submit'
+  ]));
   return stage;
 }
 
@@ -394,7 +452,7 @@ function renderLanding(){
   ddMenu.appendChild(el('div',{class:'nav-dd-title'},['Practice exams']));
   navExams.forEach(x=>{
     ddMenu.appendChild(authLink('register','nav-dd-item',[
-      el('span',{class:'exam-chip-badge', style:`background:${x.color}22;color:${x.color};border:1px solid ${x.color}55;`},[x.label]),
+      examBadge(x),
       el('span',{class:'nav-dd-name'},[x.name]),
       el('span',{class:'nav-dd-price'},[priceLabel(x.price)])
     ]));
@@ -420,7 +478,7 @@ function renderLanding(){
     return b;
   }
   const nav = el('nav',{class:'landing-nav', 'aria-label':'Main'},[
-    navButton('Home','top'), dd, navButton('How it works','how'), navButton('About','about'), navButton('Contact','contact')
+    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('About','about'), navButton('Contact','contact')
   ]);
 
   const headerActions = el('div',{class:'landing-header-actions'},[
@@ -435,47 +493,99 @@ function renderLanding(){
   wrap.appendChild(header);
 
   // ---- hero ----
-  const hero = el('div',{class:'landing-hero'});
+  const facts = landingFacts();
+  const hero = el('section',{class:'landing-hero'});
+  hero.appendChild(el('div',{class:'hero-bg', 'aria-hidden':'true'},[ el('div',{class:'hero-grid'}), el('div',{class:'hero-glow g1'}), el('div',{class:'hero-glow g2'}) ]));
+  const heroInner = el('div',{class:'hero-inner'});
   const heroCopy = el('div',{class:'hero-copy'},[
-    el('div',{class:'hero-badge'},['\u2713 Practice before the real exam']),
+    el('div',{class:'hero-badge'},[ el('span',{class:'hero-badge-dot'}), 'Practice before the real exam' ]),
     el('h1',{class:'hero-title'},[
       'Walk into your certification exam ',
-      el('span',{class:'hero-highlight'},['already knowing you\u2019ll pass']),
+      el('span',{class:'hero-highlight'},['already knowing you’ll pass']),
       '.'
     ]),
-    el('p',{class:'hero-sub'},[
-      heroSubText()
-    ])
+    el('p',{class:'hero-sub'},[ heroSubText() ])
   ]);
   const heroCtas = el('div',{class:'hero-ctas'});
-  const heroPrimary = authLink('register', 'btn btn-primary hero-btn', ['Get started free']);
-  const heroSecondary = authLink('login', 'btn btn-ghost hero-btn', ['I already have an account']);
-  heroCtas.appendChild(heroPrimary);
-  heroCtas.appendChild(heroSecondary);
+  heroCtas.appendChild(authLink('register', 'btn btn-primary hero-btn', ['Get started free', icon(ICON_ARROW, 18)]));
+  heroCtas.appendChild(authLink('login', 'btn btn-ghost hero-btn', ['I already have an account']));
   heroCopy.appendChild(heroCtas);
-  hero.appendChild(heroCopy);
-
-  // ---- hero visual: an honest mockup of the actual product, not a stock photo ----
-  const heroVisual = el('div',{class:'hero-visual'});
-  heroVisual.appendChild(renderOrbit());
-  hero.appendChild(heroVisual);
+  const hasFree = navExams.some(x => x.price === 0);
+  heroCopy.appendChild(el('ul',{class:'hero-trust'},[
+    el('li',{},[icon(ICON_CHECK, 16), 'Server-graded results']),
+    el('li',{},[icon(ICON_CHECK, 16), facts.setCount + ' practice sets per exam']),
+    hasFree ? el('li',{},[icon(ICON_CHECK, 16), 'Free exam to try']) : el('li',{},[icon(ICON_CHECK, 16), 'Works on your phone'])
+  ]));
+  heroInner.appendChild(heroCopy);
+  heroInner.appendChild(el('div',{class:'hero-visual'},[ renderHeroMockup() ]));
+  hero.appendChild(heroInner);
   wrap.appendChild(hero);
 
-  // ---- exam strip: real exams and real prices, not fabricated testimonials ----
-  const stripWrap = el('div',{class:'exam-strip-wrap', id:'exams'});
-  stripWrap.appendChild(el('p',{class:'exam-strip-label'},['Practice for']));
-  const strip = el('div',{class:'exam-strip'});
-  navExams.forEach(x=>{
-    strip.appendChild(el('div',{class:'exam-chip'},[
-      el('span',{class:'exam-chip-badge', style:`background:${x.color}22;color:${x.color};border:1px solid ${x.color}55;`},[x.label]),
-      el('span',{},[x.name]),
-      x.price !== null ? el('span',{class:'exam-chip-price'},[priceLabel(x.price)]) : null
-    ]));
-  });
-  stripWrap.appendChild(strip);
-  wrap.appendChild(stripWrap);
+  // ---- stats strip: every number comes from the live exam data ----
+  function stat(v, label){ return el('div',{class:'stat'},[ el('b',{},[String(v)]), el('span',{},[label]) ]); }
+  wrap.appendChild(el('section',{class:'stats-strip'},[
+    stat(facts.n || '—', facts.n === 1 ? 'Certification' : 'Certifications'),
+    stat(facts.setCount, 'Practice sets each'),
+    facts.samePerSet && facts.perSet ? stat(facts.perSet, 'Questions per set') : stat('Timed', 'Like the real exam'),
+    facts.samePass ? stat(facts.passPct + '%', 'Pass mark') : stat('Instant', 'Results')
+  ]));
 
-  // ---- how it works: every statement here is true of the actual app ----
+  // ---- exams: real exams, real prices ----
+  const examsSec = el('section',{class:'landing-section', id:'exams'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['Certifications']),
+      el('h2',{class:'section-title'},['Pick the exam you’re preparing for']),
+      el('p',{class:'section-sub'},['Each track has its own question bank, split into practice sets you unlock one after another.'])
+    ])
+  ]);
+  const examGrid = el('div',{class:'exam-grid'});
+  navExams.forEach(x=>{
+    const meta = [];
+    if(x.perSet) meta.push(x.perSet + ' Qs / set');
+    if(x.minutes) meta.push(x.minutes + ' min');
+    if(x.pass) meta.push(x.pass + '% to pass');
+    const card = authLink('register','exam-card',[
+      el('div',{class:'exam-card-top'},[
+        el('span',{class:'exam-card-badge', style:`--c:${safeColor(x.color)}`},[x.label]),
+        x.price !== null ? el('span',{class:'exam-card-price' + (x.price === 0 ? ' free' : '')},[priceLabel(x.price)]) : null
+      ]),
+      el('h3',{},[x.name]),
+      x.desc ? el('p',{},[x.desc]) : null,
+      meta.length ? el('div',{class:'exam-card-meta'}, meta.map(t => el('span',{},[t]))) : null,
+      el('span',{class:'exam-card-cta'},['Start practicing', icon(ICON_ARROW, 16)])
+    ]);
+    card.style.setProperty('--c', safeColor(x.color));
+    examGrid.appendChild(card);
+  });
+  if(!navExams.length) examGrid.appendChild(el('p',{class:'no-results'},['New exams are coming soon.']));
+  examsSec.appendChild(examGrid);
+  wrap.appendChild(examsSec);
+
+  // ---- features bento: every statement here is true of the actual app ----
+  function feature(ic, title, text, cls){
+    return el('div',{class:'feature' + (cls ? ' ' + cls : '')},[
+      el('div',{class:'feature-icon'},[icon(ic, 20)]),
+      el('h3',{},[title]),
+      el('p',{},[text])
+    ]);
+  }
+  wrap.appendChild(el('section',{class:'landing-section', id:'features'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['Why CertBench']),
+      el('h2',{class:'section-title'},['Built to feel like exam day']),
+      el('p',{class:'section-sub'},['A focused practice environment that shows you exactly where you stand.'])
+    ]),
+    el('div',{class:'bento'},[
+      feature(ICON_CLOCK, 'A real countdown', 'Every set runs against the clock, and is submitted automatically when time runs out, just like the real thing.', 'span-2'),
+      feature(ICON_GRID, 'Question palette', 'Jump to any question and see at a glance what you have answered, skipped or not yet visited.'),
+      feature(ICON_BOLT, 'Instant, trustworthy grading', 'Answers are checked on the server, and you get your score with a full answer breakdown the moment you submit.'),
+      feature(ICON_LOCK, 'Unlock as you improve', 'Pass a set to unlock the next one, so you build up from the basics instead of guessing.'),
+      feature(ICON_CHART, 'Track your progress', 'Every attempt is saved under My results with your score, date and pass or fail.'),
+      feature(ICON_PHONE_APP, 'Practice anywhere', 'Works on your phone and can be installed like an app from your browser.', 'span-2')
+    ])
+  ]));
+
+  // ---- how it works ----
   function howStep(n, title, text){
     return el('div',{class:'how-step'},[
       el('div',{class:'how-num'},[String(n)]),
@@ -484,8 +594,11 @@ function renderLanding(){
     ]);
   }
   const howTexts = howStepTexts();
-  wrap.appendChild(el('div',{class:'landing-section', id:'how'},[
-    el('h2',{class:'section-title'},['How it works']),
+  wrap.appendChild(el('section',{class:'landing-section', id:'how'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['How it works']),
+      el('h2',{class:'section-title'},['From sign-up to exam-ready in three steps'])
+    ]),
     el('div',{class:'how-grid'},[
       howStep(1, 'Pick a certification', howTexts.one),
       howStep(2, 'Take timed practice sets', howTexts.two),
@@ -494,15 +607,34 @@ function renderLanding(){
   ]));
 
   // ---- about ----
-  wrap.appendChild(el('div',{class:'landing-section', id:'about'},[
-    el('h2',{class:'section-title'},['About CertBench']),
-    el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t])))
+  wrap.appendChild(el('section',{class:'landing-section', id:'about'},[
+    el('div',{class:'about-wrap'},[
+      el('div',{class:'section-head'},[
+        el('span',{class:'eyebrow'},['About']),
+        el('h2',{class:'section-title'},['About CertBench'])
+      ]),
+      el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t])))
+    ])
+  ]));
+
+  // ---- CTA band ----
+  wrap.appendChild(el('section',{class:'cta-band-wrap'},[
+    el('div',{class:'cta-band'},[
+      el('div',{},[
+        el('h2',{},['Ready to find out where you stand?']),
+        el('p',{},['Create a free account and start your first practice set in minutes.'])
+      ]),
+      authLink('register','btn btn-light hero-btn',['Create free account', icon(ICON_ARROW, 18)])
+    ])
   ]));
 
   // ---- contact us (edited in the admin panel) ----
   const ci = contactInfo();
-  wrap.appendChild(el('div',{class:'landing-section', id:'contact'},[
-    el('h2',{class:'section-title'},['Contact us']),
+  wrap.appendChild(el('section',{class:'landing-section', id:'contact'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['Contact']),
+      el('h2',{class:'section-title'},['Get in touch'])
+    ]),
     el('div',{class:'contact-grid'},[
       contactCard(ICON_PIN,   'Address',        el('p',{},[ci.address])),
       contactCard(ICON_PHONE, 'Phone',          ci.phoneHref ? el('a',{href:ci.phoneHref},[ci.phone]) : el('p',{},[ci.phone])),
@@ -510,7 +642,26 @@ function renderLanding(){
     ])
   ]));
 
-  wrap.appendChild(el('footer',{class:'app-foot'},['CertBench \u2014 practice mock exams. Not affiliated with Microsoft, AWS, Google, or the Cloud Native Computing Foundation.']));
+  // ---- footer ----
+  function footLink(label, id){
+    const b = el('button',{class:'foot-link', type:'button'},[label]);
+    b.addEventListener('click', ()=> scrollToId(id));
+    return b;
+  }
+  wrap.appendChild(el('footer',{class:'site-foot'},[
+    el('div',{class:'site-foot-inner'},[
+      el('div',{class:'site-foot-brand'},[
+        brandLogo(),
+        el('p',{},['Timed mock exams for IT certifications. Practice, review, and walk in ready.'])
+      ]),
+      el('div',{class:'site-foot-links'},[
+        footLink('Exams','exams'), footLink('Features','features'), footLink('How it works','how'),
+        footLink('About','about'), footLink('Contact','contact'),
+        authLink('login','foot-link',['Sign in'])
+      ])
+    ]),
+    el('div',{class:'site-foot-legal'},['© ' + new Date().getFullYear() + ' CertBench. Practice mock exams. Not affiliated with Microsoft, AWS, Google, or the Cloud Native Computing Foundation.'])
+  ]));
 
   return wrap;
 }
@@ -520,7 +671,8 @@ function renderAuthVisual(){
   panel.appendChild(el('div',{class:'auth-visual-brand'},[
     brandMark(), brandWord()
   ]));
-  panel.appendChild(el('div',{class:'auth-visual-tagline'},['Practice mock exams. Walk in ready.']));
+  panel.appendChild(el('div',{class:'auth-visual-glow', 'aria-hidden':'true'}));
+  panel.appendChild(el('div',{class:'auth-visual-tagline'},['Practice mock exams. ', el('span',{},['Walk in ready.'])]));
   panel.appendChild(el('div',{class:'auth-visual-features'},[
     landingFacts().n ? el('div',{},[plural(landingFacts().n, 'IT certification') + ' to practice']) : null,
     el('div',{},[landingFacts().setCount + ' fresh practice sets per exam']),
@@ -809,7 +961,7 @@ function celebrateSuccess(attemptId){
   if(lastCelebratedAttemptId === attemptId) return; // don't re-burst on every re-render of the same result
   lastCelebratedAttemptId = attemptId;
 
-  const colors = ['#4257c4', '#8a9cf0', '#5cb88f', '#d2a15a', '#c9cfdc'];
+  const colors = ['#8b7dff', '#5b8cff', '#38bdf8', '#34d399', '#f5b04a'];
   const overlay = el('div',{class:'confetti-overlay'});
   const pieceCount = 60;
   for(let i = 0; i < pieceCount; i++){
@@ -1057,7 +1209,7 @@ function renderSelect(){
     el('p',{},['Each exam includes ' + (Math.max.apply(null, [0].concat(state.exams.map(e => e.set_count || 0))) || 5) + ' separate practice sets so you can retake it with fresh questions. Answers are graded on the server, so results are trustworthy.'])
   ]));
 
-  const searchWrap = el('div',{class:'search-wrap'});
+  const searchWrap = el('div',{class:'search-wrap'},[ el('span',{class:'search-icon'},[icon(ICON_SEARCH, 18)]) ]);
   const searchInput = el('input',{
     type:'text', class:'search-input',
     placeholder:'Search exams by name, e.g. "Azure", "AWS", "Kubernetes"\u2026',
@@ -1096,7 +1248,7 @@ function renderSelect(){
       ]);
 
       const actionBtn = isEnrolled
-        ? el('button',{class:'btn btn-primary'},['Choose a practice set'])
+        ? el('button',{class:'btn btn-primary'},['Choose a practice set', icon(ICON_ARROW, 16)])
         : el('button',{class:'btn btn-primary', disabled: isBusy?'disabled':undefined},[isBusy ? 'Starting\u2026' : `Enroll \u2014 ${formatRupees(bank.price_inr_paise)}`]);
 
       actionBtn.addEventListener('click', ()=>{
@@ -1104,9 +1256,9 @@ function renderSelect(){
         else enrollInExam(bank.slug);
       });
 
-      const card = el('div',{class:'cert-card'},[
+      const card = el('div',{class:'cert-card', style:`--c:${safeColor(bank.color)}`},[
         el('div',{class:'cert-top-row'},[
-          el('div',{class:'cert-badge', style:`background:${bank.color}22; color:${bank.color}; border:1px solid ${bank.color}55;`},[bank.short_label]),
+          el('div',{class:'cert-badge'},[bank.short_label]),
           priceBadge
         ]),
         el('h3',{class:'cert-name'},[bank.name]),
@@ -1152,7 +1304,7 @@ function renderSets(){
   const wrap = el('div',{class:'select-wrap'});
   const meta = state.setsExamMeta;
 
-  const backBtn = el('button',{class:'btn btn-ghost', style:'margin-bottom:1.25rem;'},['\u2190 Back to exams']);
+  const backBtn = el('button',{class:'back-link'},['\u2190 Back to exams']);
   backBtn.addEventListener('click', ()=>{ state.screen='select'; render(); });
   wrap.appendChild(backBtn);
 
@@ -1167,14 +1319,18 @@ function renderSets(){
     const startBtn = el('button',{
       class: isLocked ? 'btn btn-ghost' : 'btn btn-primary',
       disabled: isLocked ? 'disabled' : undefined
-    },[isLocked ? '\uD83D\uDD12 Locked' : (s.attemptCount > 0 ? 'Retake this set' : 'Start this set')]);
+    },[isLocked ? 'Locked' : (s.attemptCount > 0 ? 'Retake this set' : 'Start this set')]);
     if(!isLocked){
       startBtn.addEventListener('click', ()=> startExam(state.setsExamSlug, s.setNumber));
     }
 
-    const card = el('div',{class:'cert-card'+(isLocked ? ' locked-card' : '')},[
+    const best = s.bestScorePct !== null && s.bestScorePct !== undefined ? s.bestScorePct : null;
+    const card = el('div',{class:'cert-card set-card'+(isLocked ? ' locked-card' : ''), style:`--c:${safeColor(meta.color)}`},[
       el('div',{class:'cert-top-row'},[
-        el('div',{class:'cert-badge', style:`background:${meta.color}22; color:${meta.color}; border:1px solid ${meta.color}55;`},[`S${s.setNumber}`]),
+        el('div',{class:'cert-badge'},[`S${s.setNumber}`]),
+        isLocked ? el('span',{class:'set-state locked'},[icon(ICON_LOCK, 14), 'Locked'])
+          : best !== null && best >= meta.passPct ? el('span',{class:'set-state passed'},[icon(ICON_CHECK, 14), 'Passed'])
+          : el('span',{class:'set-state open'},['Unlocked'])
       ]),
       el('h3',{class:'cert-name'},[`Set ${s.setNumber}`]),
       el('div',{class:'cert-meta'},[
@@ -1182,6 +1338,7 @@ function renderSets(){
         el('span',{},[el('b',{},[s.bestScorePct!==null ? s.bestScorePct+'%' : '\u2014']), 'best score']),
         el('span',{},[el('b',{},[String(s.attemptCount)]), s.attemptCount===1 ? 'attempt' : 'attempts'])
       ]),
+      el('div',{class:'set-bar', title:'Best score'},[ el('span',{style:`width:${best||0}%`}), el('i',{style:`left:${meta.passPct}%`}) ]),
       isLocked ? el('p',{class:'lock-note'},[`Pass Set ${s.setNumber-1} (score \u2265 ${meta.passPct}%) to unlock this set.`]) : null,
       startBtn
     ]);
@@ -1213,7 +1370,7 @@ function fmtDate(iso){
 function renderHistory(){
   const wrap = el('div',{class:'select-wrap'});
 
-  const backBtn = el('button',{class:'btn btn-ghost', style:'margin-bottom:1.25rem;'},['\u2190 Back to exams']);
+  const backBtn = el('button',{class:'back-link'},['\u2190 Back to exams']);
   backBtn.addEventListener('click', ()=>{ state.screen='select'; render(); });
   wrap.appendChild(backBtn);
 
@@ -1241,7 +1398,7 @@ function renderHistory(){
   state.myAttempts.forEach(a=>{
     const row = el('div',{class:'history-row'},[
       el('div',{class:'history-cell history-exam'},[
-        el('span',{class:'history-badge', style:`background:${a.color}22;color:${a.color};border:1px solid ${a.color}55;`},[a.shortLabel]),
+        el('span',{class:'history-badge', style:`--c:${safeColor(a.color)}`},[a.shortLabel]),
         el('span',{},[a.examName, ' \u2014 Set ', String(a.setNumber)])
       ]),
       el('div',{class:'history-cell'},[fmtDate(a.finishedAt)]),
@@ -1328,10 +1485,14 @@ function renderExam(){
   const wrap = el('div',{class:'exam-wrap'});
 
   wrap.appendChild(el('div',{class:'exam-bar'},[
-    el('div',{class:'exam-title'},['Now taking ', el('b',{},[bank.name]), state.examSetNumber ? ` \u2014 Set ${state.examSetNumber}` : '']),
+    el('div',{class:'exam-title'},[el('span',{class:'exam-title-badge', style:`--c:${safeColor(bank.color)}`},[bank.shortLabel || bank.short_label || 'Exam']), el('span',{},['Now taking ', el('b',{},[bank.name]), state.examSetNumber ? ` \u2014 Set ${state.examSetNumber}` : ''])]),
     el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`},[ el('span',{class:'dot'}), el('span',{class:'time-label'},[fmtTime(state.secondsLeft)]) ])
   ]));
 
+  const answeredCount = state.questions.filter(qq => state.answers[qq.id] !== undefined).length;
+  wrap.appendChild(el('div',{class:'exam-progress', title: answeredCount + ' of ' + state.questions.length + ' answered'},[
+    el('span',{style:`width:${(answeredCount/state.questions.length*100).toFixed(1)}%`})
+  ]));
   const layout = el('div',{class:'exam-layout'});
 
   // ---- left sidebar: question palette ----
@@ -1359,7 +1520,7 @@ function renderExam(){
   reviewBtn.addEventListener('click', goToReview);
   sidebar.appendChild(reviewBtn);
 
-  const exitBtn = el('button',{class:'btn btn-ghost', style:'width:100%;margin-top:.6rem;color:var(--danger);border-color:var(--danger);'},['Exit exam']);
+  const exitBtn = el('button',{class:'btn btn-danger', style:'width:100%;margin-top:.6rem;'},['Exit exam']);
   exitBtn.addEventListener('click', exitExam);
   sidebar.appendChild(exitBtn);
 
@@ -1482,7 +1643,7 @@ function renderReview(){
   const nav = el('div',{class:'exam-nav'});
   const backBtn = el('button',{class:'btn btn-ghost'},['\u2190 Back to exam']);
   backBtn.addEventListener('click', ()=>{ state.screen='exam'; render(); });
-  const exitBtn = el('button',{class:'btn btn-ghost', style:'color:var(--danger);border-color:var(--danger);'},['Exit exam']);
+  const exitBtn = el('button',{class:'btn btn-danger'},['Exit exam']);
   exitBtn.addEventListener('click', exitExam);
   const submitBtn = el('button',{class:'btn btn-primary'},['Submit exam']);
   submitBtn.addEventListener('click', ()=>{
@@ -1536,11 +1697,11 @@ function renderResults(){
   const fg = document.createElementNS(svgNS,'circle');
   fg.setAttribute('cx','58'); fg.setAttribute('cy','58'); fg.setAttribute('r','50');
   fg.setAttribute('fill','none'); fg.setAttribute('stroke',ringColor); fg.setAttribute('stroke-width','10');
-  fg.setAttribute('stroke-linecap','round');
+  fg.setAttribute('stroke-linecap', pct > 0 ? 'round' : 'butt');
   fg.setAttribute('stroke-dasharray', `${dash} ${circumference}`);
   svg.appendChild(bg); svg.appendChild(fg);
 
-  const ring = el('div',{class:'score-ring'},[svg, el('div',{class:'pct'},[pct+'%'])]);
+  const ring = el('div',{class:'score-ring'},[svg, el('div',{class:'pct'},[pct+'%', el('small',{},['score'])])]);
   const info = el('div',{class:'score-info'},[
     el('div',{class:'pass-tag '+(pass?'pass':'fail')},[pass ? 'PASS' : 'FAIL']),
     el('h2',{},[r.examName]),
@@ -1551,7 +1712,7 @@ function renderResults(){
       el('div',{},[el('b',{},[String(total)]), el('span',{},['Total'])])
     ])
   ]);
-  wrap.appendChild(el('div',{class:'score-panel'},[ring, info]));
+  wrap.appendChild(el('div',{class:'score-panel ' + (pass ? 'is-pass' : 'is-fail')},[ring, info]));
 
   wrap.appendChild(el('div',{class:'review-head'},[ el('h3',{},['Answer breakdown']) ]));
   r.detail.forEach((d,i)=>{
