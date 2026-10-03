@@ -25,18 +25,28 @@ function validate(body){
   return { errors, value: { rating, comment } };
 }
 
+// Only people who have finished at least one practice set can leave a review.
+function hasCompletedExam(userId){
+  return !!db.prepare('SELECT 1 FROM attempts WHERE user_id = ? AND finished_at IS NOT NULL LIMIT 1').get(userId);
+}
+
 // Home page: the best approved reviews (highest rating first, then most recent).
+// Each review also carries the exam the reviewer practised most recently (shown as a badge).
 function topPublic(){
   const rows = db.prepare(`
-    SELECT r.id, r.rating, r.comment, r.updated_at, u.name
+    SELECT r.id, r.rating, r.comment, r.updated_at, u.name,
+      (SELECT e.name FROM attempts a JOIN exams e ON e.id = a.exam_id
+        WHERE a.user_id = r.user_id AND a.finished_at IS NOT NULL ORDER BY a.finished_at DESC, a.id DESC LIMIT 1) AS exam
     FROM reviews r JOIN users u ON u.id = r.user_id
     WHERE r.status = 'approved' AND r.rating >= ?
     ORDER BY r.rating DESC, r.updated_at DESC, r.id DESC
     LIMIT ?`).all(MIN_TOP_RATING, TOP_LIMIT);
   const sum = db.prepare("SELECT COUNT(*) AS n, AVG(rating) AS avg FROM reviews WHERE status = 'approved'").get();
+  const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  for(const b of db.prepare("SELECT rating, COUNT(*) AS n FROM reviews WHERE status = 'approved' GROUP BY rating").all()) breakdown[b.rating] = b.n;
   return {
-    reviews: rows.map(r => ({ id: r.id, rating: r.rating, comment: r.comment, name: displayName(r.name), date: r.updated_at })),
-    summary: { count: sum.n, average: sum.n ? Math.round(sum.avg * 10) / 10 : null }
+    reviews: rows.map(r => ({ id: r.id, rating: r.rating, comment: r.comment, name: displayName(r.name), date: r.updated_at, exam: r.exam || null })),
+    summary: { count: sum.n, average: sum.n ? Math.round(sum.avg * 10) / 10 : null, breakdown }
   };
 }
 
@@ -91,4 +101,4 @@ function remove(id){
   return db.prepare('DELETE FROM reviews WHERE id = ?').run(id).changes > 0;
 }
 
-module.exports = { validate, topPublic, mine, saveMine, deleteMine, listForAdmin, getById, setStatus, remove, displayName, STATUSES, TOP_LIMIT, MIN_TOP_RATING };
+module.exports = { hasCompletedExam, validate, topPublic, mine, saveMine, deleteMine, listForAdmin, getById, setStatus, remove, displayName, STATUSES, TOP_LIMIT, MIN_TOP_RATING };

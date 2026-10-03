@@ -12,12 +12,13 @@ router.get('/top', (req, res) => {
 
 // Signed-in users: read / write / remove their own review.
 router.get('/mine', requireAuth, (req, res) => {
-  res.json({ review: reviews.mine(req.userId) });
+  res.json({ review: reviews.mine(req.userId), canReview: reviews.hasCompletedExam(req.userId) });
 });
 
 const writeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false });
 
 router.put('/mine', writeLimiter, requireAuth, (req, res) => {
+  if(!reviews.hasCompletedExam(req.userId)) return res.status(403).json({ error: 'Finish a practice set first, then you can rate CertBench.' });
   const { errors, value } = reviews.validate(req.body);
   if(Object.keys(errors).length) return res.status(400).json({ error: 'Please fix the highlighted fields.', fields: errors });
   res.json({ review: reviews.saveMine(req.userId, value) });
