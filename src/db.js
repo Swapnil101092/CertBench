@@ -141,6 +141,21 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 `);
 try{ raw.exec('CREATE INDEX IF NOT EXISTS idx_questions_active ON questions(exam_id, set_number, active)'); }catch(e){}
 
+// Ratings & reviews of CertBench. One review per user (editing it replaces it).
+// status: 'pending' (waiting for an admin) | 'approved' (can show on the home page) | 'hidden'.
+raw.exec(`
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status, rating);
+`);
+
 try{ raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)'); }catch(e){
   console.warn('Could not add a unique index on users.email (likely pre-existing duplicate emails in the database) — new registrations are still checked at the application level, but consider cleaning up duplicates.');
 }

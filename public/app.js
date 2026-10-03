@@ -8,7 +8,7 @@ let state = {
   forgotError: '', forgotNotice: '', resetToken: null, resetEmail: '', resetError: '', resetOtp: null,
   token: null, currentUser: null,
   pendingToken: null, emailMasked: '', otpExpiresAt: null, otpResendAt: null,
-  exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null,
+  exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null, topReviews: null, myReview: undefined,
   enrollBusySlug: null,
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
   examMeta: null, examSetNumber: null, attemptId: null, questions: [], current: 0, answers: {},
@@ -162,6 +162,7 @@ const LANDING_EXAMS = [
 // Fallbacks only, used until the server's settings load (or if they can't). The real values are
 // edited in the admin panel and read from /api/settings/public.
 const CONTACT = {
+  intro: 'Questions about an exam, a payment or your account? Reach out and we will get back to you.',
   address: 'F 710, Ayaan Society, Wagholi, Pune',
   phone: '+91 8421603458',
   email: 'swapneeljain@gmail.com'
@@ -240,6 +241,30 @@ function contactCard(icon, title, valueNode){
   return el('div',{class:'contact-card'},[
     el('div',{class:'contact-icon'},[svgIcon(icon)]),
     el('div',{class:'contact-body'},[ el('h3',{},[title]), valueNode ])
+  ]);
+}
+
+// ---- Ratings: read-only stars (★ filled, ☆ empty) ----
+function starRow(rating, cls){
+  const r = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  return el('span',{class:'stars ' + (cls || ''), role:'img', 'aria-label': r + ' out of 5 stars'},[
+    el('span',{class:'stars-on', 'aria-hidden':'true'},['★'.repeat(r)]),
+    el('span',{class:'stars-off', 'aria-hidden':'true'},['★'.repeat(5 - r)])
+  ]);
+}
+function reviewDate(s){
+  const d = new Date(String(s || '').replace(' ', 'T') + 'Z');
+  return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { month:'short', year:'numeric' });
+}
+function reviewCard(r){
+  const initial = (r.name || '?').trim().charAt(0).toUpperCase();
+  return el('figure',{class:'review-card'},[
+    starRow(r.rating),
+    el('blockquote',{class:'review-text'},[r.comment]),
+    el('figcaption',{class:'review-by'},[
+      el('span',{class:'avatar review-avatar', 'aria-hidden':'true'},[initial]),
+      el('span',{},[ el('strong',{},[r.name]), el('span',{class:'review-date'},[reviewDate(r.date)]) ])
+    ])
   ]);
 }
 
@@ -334,6 +359,7 @@ function contactInfo(){
   // Links are built here from the plain values (never trusted as-is), so a bad value can't become a script link.
   const digits = phone.replace(/[^\d+]/g, '');
   return {
+    title: c.title || 'Contact us', intro: c.intro === undefined ? CONTACT.intro : c.intro,
     address, phone, email,
     phoneHref: digits.replace(/\D/g, '').length >= 7 ? 'tel:' + digits : null,
     emailHref: /^[^\s@<>"']+@[^\s@<>"']+$/.test(email) ? 'mailto:' + email : null
@@ -484,10 +510,11 @@ function priceLabel(paise){
   return paise > 0 ? formatRupees(paise) : 'Free';
 }
 async function loadLandingExams(){
-  const results = await Promise.allSettled([ api('/exams'), api('/settings/public') ]);
+  const results = await Promise.allSettled([ api('/exams'), api('/settings/public'), api('/reviews/top') ]);
   let changed = false;
   if(results[0].status === 'fulfilled'){ state.landingExams = results[0].value.exams; changed = true; }
   if(results[1].status === 'fulfilled'){ state.siteSettings = results[1].value; changed = true; }
+  if(results[2].status === 'fulfilled'){ state.topReviews = results[2].value; changed = true; }
   if(!changed) return;               // server unreachable: keep the built-in fallbacks
   if(state.screen === 'landing'){
     render();
@@ -554,7 +581,7 @@ function renderLanding(){
     return b;
   }
   const nav = el('nav',{class:'landing-nav', 'aria-label':'Main'},[
-    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('About','about'), navButton('Contact','contact')
+    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('Reviews','reviews'), navButton('About','about'), navButton('Contact','contact')
   ]);
 
   const headerActions = el('div',{class:'landing-header-actions'},[
@@ -757,14 +784,52 @@ function renderLanding(){
     ])
   ]));
 
-  // ---- about ----
+  // ---- ratings & reviews (top 5 approved 4-5 star reviews, moderated in the admin panel) ----
+  const tr = state.topReviews || { reviews: [], summary: { count: 0, average: null } };
+  const reviewsHead = el('div',{class:'section-head'},[
+    el('span',{class:'eyebrow'},['Reviews']),
+    el('h2',{class:'section-title'},['What learners say about CertBench'])
+  ]);
+  if(tr.summary && tr.summary.count){
+    reviewsHead.appendChild(el('div',{class:'rating-summary'},[
+      starRow(tr.summary.average, 'stars-lg'),
+      el('span',{},[ el('strong',{},[tr.summary.average.toFixed(1)]), ' out of 5 · ' + plural(tr.summary.count, 'rating') ])
+    ]));
+  }
+  wrap.appendChild(el('section',{class:'landing-section', id:'reviews'},[
+    reviewsHead,
+    tr.reviews.length
+      ? el('div',{class:'review-grid'}, tr.reviews.map(reviewCard))
+      : el('div',{class:'review-empty'},[
+          el('p',{},['No reviews yet. Tried a practice set? Be the first to rate CertBench.'])
+        ]),
+    el('p',{class:'review-cta'},[
+      'Practised on CertBench? ',
+      authLink('login','review-cta-link',['Sign in to rate us']),
+      ' — your review appears here once it is approved.'
+    ])
+  ]));
+
+  // ---- about + contact us (both edited in the admin panel under Site settings) ----
+  const ci = contactInfo();
   wrap.appendChild(el('section',{class:'landing-section', id:'about'},[
     el('div',{class:'about-wrap'},[
-      el('div',{class:'section-head'},[
-        el('span',{class:'eyebrow'},['About']),
-        el('h2',{class:'section-title'},['About CertBench'])
+      el('div',{class:'about-main'},[
+        el('div',{class:'section-head'},[
+          el('span',{class:'eyebrow'},['About']),
+          el('h2',{class:'section-title'},['About CertBench'])
+        ]),
+        el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t])))
       ]),
-      el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t])))
+      el('aside',{class:'contact-panel', id:'contact', 'aria-labelledby':'contact-title'},[
+        el('h3',{class:'contact-panel-title', id:'contact-title'},[ci.title]),
+        ci.intro ? el('p',{class:'contact-panel-intro'},[ci.intro]) : null,
+        el('div',{class:'contact-list'},[
+          contactCard(ICON_PIN,   'Address',        el('p',{},[ci.address])),
+          contactCard(ICON_PHONE, 'Phone',          ci.phoneHref ? el('a',{href:ci.phoneHref},[ci.phone]) : el('p',{},[ci.phone])),
+          contactCard(ICON_MAIL,  'E-mail Address', ci.emailHref ? el('a',{href:ci.emailHref},[ci.email]) : el('p',{},[ci.email]))
+        ])
+      ])
     ])
   ]));
 
@@ -776,20 +841,6 @@ function renderLanding(){
         el('p',{},['Create a free account and start your first practice set in minutes.'])
       ]),
       authLink('register','btn btn-light hero-btn',['Create free account', icon(ICON_ARROW, 18)])
-    ])
-  ]));
-
-  // ---- contact us (edited in the admin panel) ----
-  const ci = contactInfo();
-  wrap.appendChild(el('section',{class:'landing-section', id:'contact'},[
-    el('div',{class:'section-head'},[
-      el('span',{class:'eyebrow'},['Contact']),
-      el('h2',{class:'section-title'},['Get in touch'])
-    ]),
-    el('div',{class:'contact-grid'},[
-      contactCard(ICON_PIN,   'Address',        el('p',{},[ci.address])),
-      contactCard(ICON_PHONE, 'Phone',          ci.phoneHref ? el('a',{href:ci.phoneHref},[ci.phone]) : el('p',{},[ci.phone])),
-      contactCard(ICON_MAIL,  'E-mail Address', ci.emailHref ? el('a',{href:ci.emailHref},[ci.email]) : el('p',{},[ci.email]))
     ])
   ]));
 
@@ -807,7 +858,7 @@ function renderLanding(){
       ]),
       el('div',{class:'site-foot-links'},[
         footLink('Exams','exams'), footLink('Features','features'), footLink('How it works','how'),
-        footLink('About','about'), footLink('Contact','contact'),
+        footLink('Reviews','reviews'), footLink('About','about'), footLink('Contact','contact'),
         authLink('login','foot-link',['Sign in'])
       ])
     ]),
@@ -1572,7 +1623,108 @@ function renderSelect(){
   }
 
   renderExamGrid();
+  wrap.appendChild(renderMyReview());
   return wrap;
+}
+
+// ---- "Rate CertBench" card for signed-in users (one review each; admins approve before it goes public) ----
+function renderMyReview(){
+  const box = el('section',{class:'my-review', id:'my-review', 'aria-labelledby':'my-review-title'});
+  function fill(){
+    box.innerHTML = '';
+    const mine = state.myReview;
+    let editing = !mine;
+    let picked = mine ? mine.rating : 0;
+
+    box.appendChild(el('div',{class:'my-review-head'},[
+      el('h2',{id:'my-review-title'},[mine ? 'Your review of CertBench' : 'Enjoying CertBench? Rate us']),
+      el('p',{},['Good reviews (4 or 5 stars) can be featured on the CertBench home page after an admin approves them. Only your first name and last initial are shown.'])
+    ]));
+    const body = el('div',{});
+    box.appendChild(body);
+
+    function statusPill(st){
+      const map = { pending:['Waiting for approval','pending'], approved:['Approved','approved'], hidden:['Not shown publicly','hidden'] };
+      const m = map[st] || map.pending;
+      return el('span',{class:'review-status review-status-' + m[1]},[m[0]]);
+    }
+
+    function draw(){
+      body.innerHTML = '';
+      if(!editing && mine){
+        body.appendChild(el('div',{class:'my-review-view'},[
+          el('div',{class:'my-review-meta'},[ starRow(mine.rating, 'stars-lg'), statusPill(mine.status) ]),
+          el('p',{class:'my-review-text'},[mine.comment]),
+          el('div',{class:'my-review-actions'},[
+            el('button',{class:'btn btn-ghost btn-sm', type:'button', onclick:()=>{ editing = true; draw(); }},['Edit review']),
+            el('button',{class:'btn btn-ghost btn-sm', type:'button', onclick:async ()=>{
+              if(!window.confirm('Delete your review?')) return;
+              try{ await api('/reviews/mine', { method:'DELETE' }); state.myReview = null; fill(); }
+              catch(e){ alert(e.message || 'Could not delete your review.'); }
+            }},['Delete'])
+          ])
+        ]));
+        return;
+      }
+      const err = el('div',{class:'field-error', role:'alert'});
+      const starsWrap = el('div',{class:'star-input', role:'radiogroup', 'aria-label':'Your rating'});
+      const labels = ['Poor','Fair','Good','Very good','Excellent'];
+      const hint = el('span',{class:'star-hint'},[picked ? labels[picked-1] : 'Tap a star']);
+      function paint(n){
+        Array.prototype.forEach.call(starsWrap.children, (b, i)=>{ b.classList.toggle('on', i < n); });
+        hint.textContent = n ? labels[n-1] : 'Tap a star';
+      }
+      for(let i = 1; i <= 5; i++){
+        const b = el('button',{type:'button', class:'star-btn', role:'radio', 'aria-checked': String(i === picked), 'aria-label': i + ' star' + (i > 1 ? 's' : '') + ' — ' + labels[i-1]},['★']);
+        b.addEventListener('click', ()=>{
+          picked = i; paint(i);
+          Array.prototype.forEach.call(starsWrap.children, (x, j)=> x.setAttribute('aria-checked', String(j + 1 === i)));
+        });
+        b.addEventListener('mouseenter', ()=> paint(i));
+        b.addEventListener('mouseleave', ()=> paint(picked));
+        starsWrap.appendChild(b);
+      }
+      paint(picked);
+      const ta = el('textarea',{class:'review-input', rows:'4', maxlength:'500', placeholder:'What did you like? Did it help you prepare for your exam?', 'aria-label':'Your review'});
+      ta.value = mine ? mine.comment : '';
+      const count = el('span',{class:'char-count'},[ta.value.length + '/500']);
+      ta.addEventListener('input', ()=>{ count.textContent = ta.value.length + '/500'; });
+      const submit = el('button',{class:'btn btn-primary', type:'button'},[mine ? 'Update review' : 'Submit review']);
+      submit.addEventListener('click', async ()=>{
+        err.textContent = '';
+        if(!picked){ err.textContent = 'Pick a rating from 1 to 5 stars.'; return; }
+        if(ta.value.trim().length < 10){ err.textContent = 'Please write at least 10 characters about your experience.'; return; }
+        submit.disabled = true; submit.textContent = 'Saving…';
+        try{
+          const d = await api('/reviews/mine', { method:'PUT', body:{ rating: picked, comment: ta.value } });
+          state.myReview = d.review; fill();
+          const t = document.querySelector('.my-review .my-review-meta');
+          if(t) t.appendChild(el('span',{class:'review-thanks'},['Thanks! An admin will review it shortly.']));
+        }catch(e){
+          submit.disabled = false; submit.textContent = mine ? 'Update review' : 'Submit review';
+          err.textContent = (e.fields && (e.fields.rating || e.fields.comment)) || e.message || 'Could not save your review.';
+        }
+      });
+      body.appendChild(el('div',{class:'my-review-form'},[
+        el('div',{class:'star-row'},[starsWrap, hint]),
+        ta,
+        el('div',{class:'my-review-foot'},[
+          count, err,
+          el('div',{class:'my-review-actions'},[
+            mine ? el('button',{class:'btn btn-ghost btn-sm', type:'button', onclick:()=>{ editing = false; picked = mine.rating; draw(); }},['Cancel']) : null,
+            submit
+          ])
+        ]),
+        mine ? el('p',{class:'my-review-note'},['Editing sends your review back for approval.']) : null
+      ]));
+    }
+    draw();
+  }
+  if(state.myReview === undefined){
+    box.appendChild(el('p',{class:'my-review-loading'},['Loading your review…']));
+    api('/reviews/mine').then(d => { state.myReview = d.review; fill(); }).catch(() => { box.remove(); });
+  } else fill();
+  return box;
 }
 
 async function loadSets(slug){
@@ -2047,7 +2199,7 @@ function signOut(){
     setsExamSlug:null, setsExamMeta:null, availableSets:[],
     attemptId:null, examMeta:null, examSetNumber:null, questions:[], current:0, answers:{},
     visitedIds:{}, skippedIds:{},
-    results:null, myAttempts:[], examSearch:'', examCat:'all',
+    results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined,
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
     loginError:'', loginNotice:'', otpError:'', registerError:'', regDraft:null
   });
