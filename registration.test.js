@@ -1,0 +1,181 @@
+// Regression + validation tests for registration and the sign-in flow.
+// Run with:  npm test
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { startServer, validUser } = require('./helpers');
+
+let srv;
+test.before(async () => { srv = await startServer(); });
+test.after(() => srv && srv.stop());
+
+async function register(over){ return srv.api('/auth/register', { method: 'POST', body: validUser(over) }); }
+async function expectRejected(over, msgPart){
+  const r = await register(over);
+  assert.equal(r.status, 400, `expected 400 for ${JSON.stringify(over)}, got ${r.status} ${JSON.stringify(r.data)}`);
+  if(msgPart) assert.match(r.data.error, msgPart);
+  return r;
+}
+async function expectAccepted(over){
+  const r = await register(over);
+  assert.equal(r.status, 201, `expected 201 for ${JSON.stringify(over)}, got ${r.status} ${JSON.stringify(r.data)}`);
+  return r;
+}
+
+// ---------------------------------------------------------------- happy path / end to end
+test('E2E: register -> login -> OTP -> /me -> forgot -> reset -> login with new password', async () => {
+  const u = validUser();
+  const reg = await srv.api('/auth/register', { method: 'POST', body: u });
+  assert.equal(reg.status, 201);
+  assert.equal(reg.data.user.username, u.username);
+  assert.equal(reg.data.user.isAdmin, false);
+  assert.ok(!('password_hash' in reg.data.user), 'never leak the password hash');
+
+  const login = await srv.api('/auth/login', { method: 'POST', body: { username: u.username.toUpperCase(), password: u.password } });
+  assert.equal(login.status, 200, 'username sign-in is case-insensitive');
+  assert.ok(login.data.pendingToken && login.data.devOtp);
+
+  const bad = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: '000000' } });
+  assert.equal(bad.status, 400);
+  const ok = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: login.data.devOtp } });
+  assert.equal(ok.status, 200);
+  const reuse = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: login.data.devOtp } });
+  assert.notEqual(reuse.status, 200, 'an OTP can only be used once');
+
+  const me = await srv.api('/auth/me', { token: ok.data.token });
+  assert.equal(me.status, 200);
+  assert.equal(me.data.user.email, u.email.toLowerCase());
+
+  const forgot = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: u.email } });
+  assert.equal(forgot.status, 200);
+  const weak = await srv.api('/auth/reset-password', { method: 'POST', body: { resetToken: forgot.data.resetToken, code: forgot.data.devOtp, newPassword: 'abc12345' } });
+  assert.equal(weak.status, 400, 'reset must enforce the same password rules as registration');
+  const reset = await srv.api('/auth/reset-password', { method: 'POST', body: { resetToken: forgot.data.resetToken, code: forgot.data.devOtp, newPassword: 'NewPass#456' } });
+  assert.equal(reset.status, 200);
+  const old = await srv.api('/auth/me', { token: ok.data.token });
+  assert.equal(old.status, 401, 'password reset signs out old sessions');
+
+  const oldPw = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
+  assert.equal(oldPw.status, 401);
+  const newPw = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: 'NewPass#456' } });
+  assert.equal(newPw.status, 200);
+});
+
+test('forgot-password does not reveal whether an email exists', async () => {
+  const r = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: 'nobody-here@example.com' } });
+  assert.equal(r.status, 200);
+  assert.ok(!r.data.resetToken);
+});
+
+test('login with wrong password or unknown user gives the same 401', async () => {
+  const u = validUser(); await srv.api('/auth/register', { method: 'POST', body: u });
+  const a = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: 'Wrong#Pass1' } });
+  const b = await srv.api('/auth/login', { method: 'POST', body: { username: 'no_such_user', password: 'Wrong#Pass1' } });
+  assert.equal(a.status, 401); assert.equal(b.status, 401); assert.equal(a.data.error, b.data.error);
+});
+
+// ---------------------------------------------------------------- required fields / types
+test('every field is required', async () => {
+  for(const k of ['name', 'email', 'mobile', 'username', 'password']){
+    await expectRejected({ [k]: '' });
+    await expectRejected({ [k]: '   ' });
+  }
+});
+test('non-string values are rejected with 400, not a server error', async () => {
+  for(const k of ['name', 'email', 'mobile', 'username', 'password']){
+    for(const v of [12345678, ['Abc@12345'], { a: 1 }, true]){
+      const r = await srv.api('/auth/register', { method: 'POST', body: validUser({ [k]: v }) });
+      assert.equal(r.status, 400, `${k}=${JSON.stringify(v)} -> ${r.status}`);
+    }
+  }
+});
+test('malformed JSON body gives 400', async () => {
+  const r = await srv.api('/auth/register', { method: 'POST', raw: '{"name": ' });
+  assert.equal(r.status, 400);
+});
+
+// ---------------------------------------------------------------- username
+test('username: numbers are NOT allowed', async () => {
+  for(const u of ['john123', '123john', 'john_2', '9999', 'j0hn', 'test.user1']) await expectRejected({ username: u }, /username/i);
+});
+test('username: valid forms are accepted', async () => {
+  for(const u of ['john', 'john_doe', 'john.doe', 'JohnDoe', 'abc']) await expectAccepted({ username: u });
+});
+test('username: stored lowercase and unique case-insensitively', async () => {
+  await expectAccepted({ username: 'CaseUser' });
+  const r = await register({ username: 'caseuser' });
+  assert.equal(r.status, 409);
+});
+test('username: length 3-20', async () => {
+  await expectRejected({ username: 'ab' }, /username/i);
+  await expectRejected({ username: 'a'.repeat(21) }, /username/i);
+  await expectAccepted({ username: 'b'.repeat(20) });
+});
+test('username: no spaces, symbols, or non-Latin letters', async () => {
+  for(const u of ['john doe', 'john-doe', 'john@doe', 'john!', 'jöhn', 'जॉन', '<script>', "john'", 'john$']) await expectRejected({ username: u }, /username/i);
+});
+test('username: must start with a letter and not end with . or _', async () => {
+  for(const u of ['_john', '.john', 'john_', 'john.']) await expectRejected({ username: u }, /username/i);
+});
+test('username: no consecutive dots/underscores', async () => {
+  for(const u of ['john..doe', 'john__doe', 'john._doe']) await expectRejected({ username: u }, /username/i);
+});
+test('username: reserved names are blocked', async () => {
+  for(const u of ['admin', 'Administrator', 'root', 'support', 'certbench', 'system']) await expectRejected({ username: u }, /reserved|not available/i);
+});
+
+// ---------------------------------------------------------------- name
+test('name: valid names accepted', async () => {
+  for(const n of ["Swapnil Jain", "Mary-Jane O'Neil", 'A. B. Kumar', 'Li']) await expectAccepted({ name: n });
+});
+test('name: digits, symbols, single letter, too long rejected', async () => {
+  for(const n of ['John2', 'J', 'John@Doe', '<b>John</b>', '---', 'A'.repeat(81), "John  --  Doe", '. John']) await expectRejected({ name: n }, /name/i);
+});
+test('name: extra inner spaces are collapsed', async () => {
+  const r = await expectAccepted({ name: '  Ravi    Kumar  ' });
+  assert.equal(r.data.user.name, 'Ravi Kumar');
+});
+
+// ---------------------------------------------------------------- email
+test('email: invalid formats rejected', async () => {
+  for(const e of ['plainaddress', 'a@b', 'a@b.c', '@example.com', 'john@', 'john..doe@example.com', '.john@example.com', 'john.@example.com', 'john doe@example.com', 'john@exa mple.com', 'john@-example.com', 'a'.repeat(65) + '@example.com']) await expectRejected({ email: e }, /email/i);
+});
+test('email: stored lowercase; duplicate (any case) rejected', async () => {
+  const r = await expectAccepted({ email: 'Mixed.Case@Example.COM' });
+  assert.equal(r.data.user.email, 'mixed.case@example.com');
+  const d = await register({ email: 'mixed.case@example.com' });
+  assert.equal(d.status, 409);
+});
+test('email: plus-addressing and subdomains are allowed', async () => {
+  await expectAccepted({ email: 'qa+certbench@mail.example.co.in' });
+});
+
+// ---------------------------------------------------------------- mobile
+test('mobile: must be a 10-digit Indian number starting 6-9', async () => {
+  for(const m of ['12345', '12345678901', '5876543210', '0000000000', 'abcdefghij', '98765-4321']) await expectRejected({ mobile: m }, /mobile/i);
+});
+test('mobile: obviously fake numbers rejected', async () => {
+  for(const m of ['9999999999', '6666666666']) await expectRejected({ mobile: m }, /mobile/i);
+});
+test('mobile: +91 / 0 prefix and spaces are accepted and normalised', async () => {
+  const a = await expectAccepted({ mobile: '+91 98234 56710' });
+  assert.equal(a.data.user.mobile, '9823456710');
+  const b = await expectAccepted({ mobile: '09823456711' });
+  assert.equal(b.data.user.mobile, '9823456711');
+});
+test('mobile: already-registered number is rejected', async () => {
+  await expectAccepted({ mobile: '9123456780' });
+  const r = await register({ mobile: '9123456780' });
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /mobile/i);
+});
+
+// ---------------------------------------------------------------- password
+test('password: strength rules', async () => {
+  for(const p of ['Ab@1', 'abcdefgh', '12345678', 'abcd1234', 'ABCD@1234', 'abcd@1234', 'Abcd12345', 'Abcd @1234', 'A1@' + 'a'.repeat(70)]) await expectRejected({ password: p }, /password/i);
+});
+test('password: must not contain the username', async () => {
+  await expectRejected({ username: 'ravi', password: 'Ravi@2026x' }, /password/i);
+});
+test('password: strong passwords accepted', async () => {
+  await expectAccepted({ password: 'Str0ng#Pass' });
+});

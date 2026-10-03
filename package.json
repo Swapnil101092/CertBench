@@ -1,11 +1,13 @@
 {
   "name": "certbench",
   "version": "1.0.0",
-  "description": "CertBench \u2014 timed IT certification mock exams with real accounts, SMS OTP login, and server-side grading.",
+  "description": "CertBench — timed IT certification mock exams with real accounts, SMS OTP login, and server-side grading.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "test:ui": "node --test --test-concurrency=1 tests/ui/*.test.js",
     "seed": "node src/seed.js",
     "dev": "node server.js",
     "delete-user": "node src/delete-user.js",
@@ -23,5 +25,8 @@
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.14",
     "razorpay": "^2.9.4"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

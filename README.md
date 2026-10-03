@@ -101,18 +101,35 @@ once from a CSV file.
 
 ## 2d. Validation rules
 
-Registration enforces (both in the browser and, authoritatively, on the server):
-- Name: letters only, 2-80 characters
-- Email: standard email format (not restricted to specific providers — Gmail, Yahoo,
-  Outlook, work domains, etc. all work; only the *shape* of the address is checked), and
-  must not already be registered
-- Mobile: exactly 10 digits, must start with 6, 7, 8, or 9 (Indian mobile format)
-- Username: 3-32 characters, letters/numbers/dot/underscore, must be unique
-- Password: at least 6 characters, must include at least one letter and one number
+Registration enforces (both in the browser and, authoritatively, on the server). The same
+rules apply to the admin panel's "Add user" / edit form and to password resets.
+- Name: 2-80 characters; letters, single spaces, hyphens, apostrophes and dots (e.g.
+  "Mary-Jane O'Neil", "A. B. Kumar"). No digits or other symbols; extra spaces are collapsed.
+- Email: standard email format (not restricted to specific providers), max 254 characters
+  (64 before the `@`), no leading/trailing/double dots, a real top-level domain (2+ letters).
+  Stored lowercase; must not already be registered (case-insensitive).
+- Mobile: 10-digit Indian number starting with 6, 7, 8 or 9. A `+91`/`91`/`0` prefix and
+  spaces are accepted and stripped. All-same-digit numbers (e.g. 9999999999) are rejected,
+  and a number can only be used by one account.
+- Username: 3-20 characters, **letters only — no numbers**. Dots or underscores are allowed
+  only between letters (no leading/trailing ones, no two in a row). Stored lowercase and
+  unique. Reserved names such as `admin`, `root`, `support`, `certbench` are blocked.
+  Existing accounts created under older rules can still sign in and be edited.
+- Password: 8-64 characters with an uppercase letter, a lowercase letter, a number and a
+  special character; no spaces; must not contain the username.
+- Every field must be a string; anything else is a clean 400 error (never a server error).
+  The form shows each problem under its field and keeps what the user typed.
 
-Adjust the regular expressions in `src/routes/auth.js` (and mirror any change in
-`public/app.js`'s `renderRegister`) if your target audience needs different rules — e.g.
-international phone numbers instead of a fixed 10-digit Indian format.
+The rules live in `src/validation.js`; `REG_RULES` in `public/app.js` mirrors them for instant
+feedback, so change both together.
+
+### Automated tests
+
+    npm test          # API regression suite (registration, sign-in/OTP, password reset, admin users)
+    npm run test:ui   # browser end-to-end tests of the registration form (Playwright, headless Chromium)
+
+Both start their own server on a throw-away database, so they never touch real data.
+`test:ui` needs a Chromium build: set `CHROMIUM_PATH`, or run `npx playwright install chromium`.
 
 ## 2e. Search, history, and password reset
 
