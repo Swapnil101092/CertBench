@@ -156,6 +156,19 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status, rating);
 `);
 
+// Photos for the "About Us" section of the home page (uploaded in the admin panel).
+raw.exec(`
+CREATE TABLE IF NOT EXISTS about_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  caption TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 try{ raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)'); }catch(e){
   console.warn('Could not add a unique index on users.email (likely pre-existing duplicate emails in the database) — new registrations are still checked at the application level, but consider cleaning up duplicates.');
 }
