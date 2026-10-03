@@ -131,3 +131,14 @@ textarea.adm-input{ resize:vertical; line-height:1.5; }
 .adm-pager{ display:flex; align-items:center; justify-content:center; gap:1rem; margin-top:.4rem; }
 .adm-inline{ display:flex; gap:.7rem; flex-wrap:wrap; align-items:center; margin:.6rem 0 .2rem; }
 .adm-inline .adm-input{ flex:1; min-width:200px; }
+
+/* reviews */
+.adm-stars{ color:var(--accent-warm); letter-spacing:.06em; font-size:1rem; white-space:nowrap; }
+.adm-stars-off{ color:var(--panel-border); }
+.adm-review{ padding:1.1rem 1.3rem; margin-bottom:.8rem; }
+.adm-review-top{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.adm-review-when{ margin:0 0 0 auto; }
+.adm-review-text{ margin:.7rem 0; line-height:1.6; white-space:pre-line; overflow-wrap:anywhere; }
+.adm-review-foot{ display:flex; align-items:center; justify-content:space-between; gap:.8rem; flex-wrap:wrap; }
+.adm-review-foot .adm-hint{ margin:0; }
+.adm-danger-btn:hover{ color:var(--danger) !important; border-color:var(--danger) !important; }
