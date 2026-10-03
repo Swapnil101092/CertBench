@@ -158,7 +158,7 @@ function navigate(view){
   return guard((function(){
     if(view === 'overview') return api('/overview').then(function(d){ S.overview = d; S.view = 'overview'; renderApp(); });
     if(view === 'exams') return api('/exams').then(function(d){ S.exams = d.exams; S.view = 'exams'; renderApp(); });
-    if(view === 'settings') return api('/settings').then(function(d){ S.settings = d.settings; S.view = 'settings'; renderApp(); });
+    if(view === 'settings') return Promise.all([api('/settings'), api('/photos')]).then(function(r){ S.settings = r[0].settings; S.photos = r[1]; S.view = 'settings'; renderApp(); });
     if(view === 'exam-new'){ S.view = 'exam-new'; renderApp(); return Promise.resolve(); }
     if(view === 'users') return loadUsers(1).then(function(){ S.view = 'users'; renderApp(); });
     if(view === 'user-new'){ S.view = 'user-new'; renderApp(); return Promise.resolve(); }
@@ -940,11 +940,11 @@ function viewSettings(){
     el('h2', {}, ['Announcement banner']),
     el('label', { class: 'adm-check' }, [promoOn, ' Show the banner at the top of the landing page']),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['Message', promoText]), el('div', { class: 'adm-hint' }, ['Blank = an automatic line such as “6 certifications ready to practice”. If you change the message, people who closed the old one will see it again.']), err('promoText') ]),
-    el('h2', {}, ['About text']),
-    el('div', { class: 'adm-field' }, [ el('label', {}, ['About CertBench', about]), el('div', { class: 'adm-hint' }, ['Separate paragraphs with a blank line. Leave empty to use the standard text.']), err('aboutText') ]),
+    el('h2', {}, ['About Us text']),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['About Us', about]), el('div', { class: 'adm-hint' }, ['Separate paragraphs with a blank line. Leave empty to use the standard text.']), err('aboutText') ]),
     el('div', { class: 'adm-actions' }, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ about.value = s.defaults.aboutText; } }, ['Fill in the standard text to edit it']) ]),
     el('h2', {}, ['Contact us panel']),
-    el('p', { class: 'adm-hint' }, ['Shown next to the About text on the home page.']),
+    el('p', { class: 'adm-hint' }, ['Shown next to the About Us section on the home page.']),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['Heading', cTitle]), err('contactTitle') ]),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['Intro line', cIntro]), err('contactIntro') ]),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['Address', address]), err('contactAddress') ]),
@@ -973,7 +973,111 @@ function viewSettings(){
   ]);
   wrap.appendChild(el('h1', { class: 'adm-h1' }, ['Site settings']));
   wrap.appendChild(card);
+  wrap.appendChild(viewPhotos());
   return wrap;
+}
+
+// ---------------------------------------------------------------- About Us photos
+// Photos are resized in the browser (longest side 1600px) before upload, so phone photos of
+// several MB become a few hundred KB and the home page stays fast.
+function resizeImage(file){
+  return new Promise(function(resolve, reject){
+    if(!/^image\/(jpeg|png|webp)$/.test(file.type)) return reject(new Error(file.name + ': only JPEG, PNG or WebP photos can be uploaded.'));
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function(){
+      URL.revokeObjectURL(url);
+      var max = 1600, w = img.naturalWidth, h = img.naturalHeight;
+      var k = Math.min(1, max / Math.max(w, h));
+      var c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      var ctx = c.getContext('2d');
+      var keepPng = file.type === 'image/png' && k === 1 && file.size < 1024 * 1024;   // small PNGs (logos, screenshots) stay sharp
+      if(!keepPng){ ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      var data = keepPng ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+      resolve(data);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error(file.name + ': that file could not be read as an image.')); };
+    img.src = url;
+  });
+}
+
+function viewPhotos(){
+  var P = S.photos || { photos: [], max: 12 };
+  var list = P.photos;
+  var card = el('div', { class: 'adm-card' });
+  var fileInput = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, class: 'adm-file' });
+  var newCaption = el('input', { class: 'adm-input', type: 'text', maxlength: '120', placeholder: 'Optional caption, e.g. “Our team in Pune”' });
+  var status = el('div', { class: 'adm-hint' });
+  var uploadBtn = el('button', { class: 'btn btn-primary', type: 'button' }, ['Upload photo']);
+
+  function refresh(d){ S.photos = d; var fresh = viewPhotos(); card.parentNode.replaceChild(fresh, card); }
+
+  uploadBtn.addEventListener('click', function(){
+    var files = Array.prototype.slice.call(fileInput.files || []);
+    if(!files.length){ toast('Choose a photo first.', 'err'); return; }
+    var room = P.max - list.length;
+    if(files.length > room){ toast(room > 0 ? 'You can add ' + room + ' more photo' + (room === 1 ? '' : 's') + ' (max ' + P.max + ').' : 'You already have ' + P.max + ' photos. Delete one first.', 'err'); return; }
+    uploadBtn.disabled = true;
+    var caption = newCaption.value;
+    var last = null, done = 0;
+    var chain = Promise.resolve();
+    files.forEach(function(f){
+      chain = chain.then(function(){
+        status.textContent = 'Uploading ' + (done + 1) + ' of ' + files.length + '…';
+        return resizeImage(f).then(function(data){
+          return api('/photos', { method: 'POST', body: { image: data, caption: files.length === 1 ? caption : '' } });
+        }).then(function(d){ last = d; done++; });
+      });
+    });
+    chain.then(function(){
+      toast(done === 1 ? 'Photo uploaded. It now shows in the About Us section.' : done + ' photos uploaded.', 'ok');
+      refresh(last);
+    }).catch(function(e){
+      uploadBtn.disabled = false; status.textContent = '';
+      if(last) refresh(last);
+      if(e.status === 401 || e.status === 403) return guard(Promise.reject(e));
+      toast(e.message, 'err');
+    });
+  });
+
+  function act(promise, msg){
+    guard(promise.then(function(d){ if(msg) toast(msg, 'ok'); refresh(d); }));
+  }
+
+  card.appendChild(el('h2', {}, ['About Us photos']));
+  card.appendChild(el('p', { class: 'adm-hint' }, ['Shown as a photo gallery in the About Us section of the home page, in this order. JPEG, PNG or WebP; large photos are resized automatically. Up to ' + P.max + ' photos.']));
+  card.appendChild(el('div', { class: 'adm-photo-upload' }, [
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Photo', fileInput]) ]),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Caption', newCaption]), el('div', { class: 'adm-hint' }, ['Used when you upload one photo at a time. You can edit captions below.']) ]),
+    el('div', { class: 'adm-actions' }, [ uploadBtn, status ])
+  ]));
+
+  if(!list.length){
+    card.appendChild(el('p', { class: 'adm-empty' }, ['No photos yet. The About Us section shows text only.']));
+    return card;
+  }
+  var grid = el('div', { class: 'adm-photo-grid' });
+  list.forEach(function(p, i){
+    var cap = el('input', { class: 'adm-input', type: 'text', maxlength: '120', value: p.caption, placeholder: 'No caption' });
+    grid.appendChild(el('div', { class: 'adm-photo' }, [
+      el('a', { href: p.url, target: '_blank', rel: 'noopener', class: 'adm-photo-thumb' }, [ el('img', { src: p.url, alt: p.caption || 'Photo ' + (i + 1), loading: 'lazy' }) ]),
+      el('div', { class: 'adm-hint' }, ['#' + (i + 1) + ' · ' + Math.max(1, Math.round(p.bytes / 1024)) + ' KB']),
+      cap,
+      el('div', { class: 'adm-photo-actions' }, [
+        el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ act(api('/photos/' + p.id, { method: 'PUT', body: { caption: cap.value } }), 'Caption saved.'); } }, ['Save caption']),
+        el('button', { class: 'btn btn-ghost adm-small', type: 'button', title: 'Move earlier', 'aria-label': 'Move earlier', disabled: i === 0, onclick: function(){ act(api('/photos/' + p.id + '/move', { method: 'POST', body: { dir: -1 } })); } }, ['←']),
+        el('button', { class: 'btn btn-ghost adm-small', type: 'button', title: 'Move later', 'aria-label': 'Move later', disabled: i === list.length - 1, onclick: function(){ act(api('/photos/' + p.id + '/move', { method: 'POST', body: { dir: 1 } })); } }, ['→']),
+        el('button', { class: 'btn btn-ghost adm-small adm-danger-btn', type: 'button', onclick: function(){
+          if(!window.confirm('Delete this photo from the About Us section?')) return;
+          act(api('/photos/' + p.id, { method: 'DELETE' }), 'Photo deleted.');
+        } }, ['Delete'])
+      ])
+    ]));
+  });
+  card.appendChild(grid);
+  return card;
 }
 
 // ---------------------------------------------------------------- start

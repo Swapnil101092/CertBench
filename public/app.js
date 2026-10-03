@@ -406,6 +406,41 @@ function aboutParagraphs(){
   const a = state.siteSettings && state.siteSettings.about;
   return (a && a.length) ? a : DEFAULT_ABOUT;
 }
+// Photos uploaded in the admin panel (Site settings -> About Us photos). Click one to see it larger.
+function renderAboutPhotos(){
+  const photos = (state.siteSettings && state.siteSettings.aboutPhotos) || [];
+  if(!photos.length) return null;
+  function open(i){
+    let idx = i;
+    const img = el('img',{class:'photo-lb-img', alt:''});
+    const cap = el('p',{class:'photo-lb-cap'});
+    function show(){ const p = photos[idx]; img.src = p.url; img.alt = p.caption || 'CertBench photo'; cap.textContent = p.caption || ''; cap.hidden = !p.caption; }
+    function close(){ document.removeEventListener('keydown', onKey); box.remove(); }
+    function step(d){ idx = (idx + d + photos.length) % photos.length; show(); }
+    function onKey(e){ if(e.key === 'Escape') close(); else if(e.key === 'ArrowRight') step(1); else if(e.key === 'ArrowLeft') step(-1); }
+    const btn = (label, cls, fn) => { const b = el('button',{class:'photo-lb-btn ' + cls, type:'button', 'aria-label':label},[cls === 'photo-lb-close' ? '×' : (cls === 'photo-lb-prev' ? '‹' : '›')]); b.addEventListener('click', e => { e.stopPropagation(); fn(); }); return b; };
+    const box = el('div',{class:'photo-lb', role:'dialog', 'aria-modal':'true', 'aria-label':'Photo'},[
+      el('figure',{class:'photo-lb-fig'},[img, cap]),
+      btn('Close','photo-lb-close', close),
+      photos.length > 1 ? btn('Previous photo','photo-lb-prev', () => step(-1)) : null,
+      photos.length > 1 ? btn('Next photo','photo-lb-next', () => step(1)) : null
+    ]);
+    box.addEventListener('click', e => { if(e.target === box) close(); });
+    img.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('keydown', onKey);
+    show();
+    document.body.appendChild(box);
+    box.querySelector('.photo-lb-close').focus();
+  }
+  return el('div',{class:'about-photos' + (photos.length === 1 ? ' about-photos-one' : '')}, photos.map((p, i) => {
+    const b = el('button',{class:'about-photo', type:'button', 'aria-label':'View photo' + (p.caption ? ': ' + p.caption : '')},[
+      el('img',{src:p.url, alt:p.caption || '', loading:'lazy', decoding:'async'}),
+      p.caption ? el('span',{class:'about-photo-cap'},[p.caption]) : null
+    ]);
+    b.addEventListener('click', () => open(i));
+    return b;
+  }));
+}
 function contactInfo(){
   const c = (state.siteSettings && state.siteSettings.contact) || {};
   const address = c.address || CONTACT.address;
@@ -636,7 +671,7 @@ function renderLanding(){
     return b;
   }
   const nav = el('nav',{class:'landing-nav', 'aria-label':'Main'},[
-    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('Reviews','reviews'), navButton('About','about'), navButton('Contact','contact')
+    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('Reviews','reviews'), navButton('About Us','about'), navButton('Contact','contact')
   ]);
 
   const headerActions = el('div',{class:'landing-header-actions'},[
@@ -848,10 +883,11 @@ function renderLanding(){
     el('div',{class:'about-wrap'},[
       el('div',{class:'about-main'},[
         el('div',{class:'section-head'},[
-          el('span',{class:'eyebrow'},['About']),
-          el('h2',{class:'section-title'},['About CertBench'])
+          el('span',{class:'eyebrow'},['About Us']),
+          el('h2',{class:'section-title'},['About Us'])
         ]),
-        el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t])))
+        el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t]))),
+        renderAboutPhotos()
       ]),
       el('aside',{class:'contact-panel', id:'contact', 'aria-labelledby':'contact-title'},[
         el('h3',{class:'contact-panel-title', id:'contact-title'},[ci.title]),
@@ -890,7 +926,7 @@ function renderLanding(){
       ]),
       el('div',{class:'site-foot-links'},[
         footLink('Exams','exams'), footLink('Features','features'), footLink('How it works','how'),
-        footLink('Reviews','reviews'), footLink('About','about'), footLink('Contact','contact'),
+        footLink('Reviews','reviews'), footLink('About Us','about'), footLink('Contact','contact'),
         authLink('login','foot-link',['Sign in'])
       ])
     ]),
