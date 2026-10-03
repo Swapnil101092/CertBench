@@ -117,6 +117,10 @@ try{ raw.exec("ALTER TABLE exams ADD COLUMN source TEXT NOT NULL DEFAULT 'seed'"
 // questions.active: 0 = removed by an admin. The row is kept so past results and
 // in-progress attempts that used it still work.
 try{ raw.exec('ALTER TABLE questions ADD COLUMN active INTEGER NOT NULL DEFAULT 1'); }catch(e){}
+// users.last_seen_at: when this person last used the site while signed in (UTC). Logins are JWTs with
+// no server-side session, so the admin panel's "active now" count is based on this.
+try{ raw.exec('ALTER TABLE users ADD COLUMN last_seen_at TEXT'); }catch(e){}
+try{ raw.exec('CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at)'); }catch(e){}
 
 raw.exec(`
 -- Which questions an attempt was actually served, so grading stays correct even if an

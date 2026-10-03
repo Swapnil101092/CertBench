@@ -51,7 +51,19 @@ function sessionUser(payload){
   const u = db.prepare('SELECT id, token_version FROM users WHERE id = ?').get(payload.sub);
   if(!u) return null;
   if((payload.tv || 0) !== (u.token_version || 0)) return null;
+  touchLastSeen(u.id);
   return u;
+}
+
+// Records that a signed-in user is using the site. Written at most once a minute per user, so busy
+// pages don't turn every request into a database write.
+const ACTIVE_WINDOW_MINUTES = 15;
+function touchLastSeen(userId){
+  db.prepare("UPDATE users SET last_seen_at = datetime('now') WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < datetime('now', '-60 seconds'))").run(userId);
+}
+// Signed-in users who made a request in the last ACTIVE_WINDOW_MINUTES.
+function countActiveUsers(){
+  return db.prepare("SELECT COUNT(*) AS n FROM users WHERE last_seen_at >= datetime('now', ?)").get('-' + ACTIVE_WINDOW_MINUTES + ' minutes').n;
 }
 
 function requireAuth(req, res, next){
@@ -105,4 +117,4 @@ function requireAdmin(req, res, next){
   });
 }
 
-module.exports = { signSessionToken, signPendingToken, signResetToken, verifyToken, requireAuth, requireAdmin, optionalAuth, isAdminUser, adminEmailList, adminEmailsActive };
+module.exports = { ACTIVE_WINDOW_MINUTES, countActiveUsers, signSessionToken, signPendingToken, signResetToken, verifyToken, requireAuth, requireAdmin, optionalAuth, isAdminUser, adminEmailList, adminEmailsActive };
