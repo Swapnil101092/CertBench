@@ -9,6 +9,7 @@ const examRoutes = require('./src/routes/exams');
 const paymentRoutes = require('./src/routes/payments');
 const adminRoutes = require('./src/routes/admin');
 const settingsRoutes = require('./src/routes/settings');
+const reviewRoutes = require('./src/routes/reviews');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -38,6 +39,7 @@ app.use('/api/exams', examRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
