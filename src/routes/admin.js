@@ -5,6 +5,7 @@ const { requireAdmin, isAdminUser, adminEmailList, adminEmailsActive } = require
 const V = require('../validation');
 const { parseCsv, toQuestionRows } = require('../csv');
 const settings = require('../settings');
+const reviews = require('../reviews');
 
 const router = express.Router();
 router.use(requireAdmin);          // every route below needs a logged-in admin (checked in the database each time)
@@ -545,6 +546,32 @@ router.put('/settings', (req, res) => {
   res.json({ settings: settings.getForAdmin() });
 });
 
+// ---------------------------------------------------------------- ratings & reviews
+
+router.get('/reviews', (req, res) => {
+  res.json(reviews.listForAdmin(String(req.query.status || '')));
+});
+
+router.post('/reviews/:id/status', (req, res) => {
+  const id = toId(req.params.id);
+  const r = id && reviews.getById(id);
+  if(!r) return fail(res, 404, 'Review not found.');
+  const status = req.body && req.body.status;
+  if(!reviews.STATUSES.includes(status)) return fail(res, 400, 'Status must be pending, approved or hidden.');
+  reviews.setStatus(id, status);
+  audit(req, 'review.' + status, `#${id} by @${r.username} (${r.rating}★)`);
+  res.json(reviews.listForAdmin(String(req.query.status || '')));
+});
+
+router.delete('/reviews/:id', (req, res) => {
+  const id = toId(req.params.id);
+  const r = id && reviews.getById(id);
+  if(!r) return fail(res, 404, 'Review not found.');
+  reviews.remove(id);
+  audit(req, 'review.delete', `#${id} by @${r.username} (${r.rating}★)`);
+  res.json(reviews.listForAdmin(String(req.query.status || '')));
+});
+
 // ---------------------------------------------------------------- overview
 
 router.get('/overview', (req, res) => {
@@ -558,7 +585,8 @@ router.get('/overview', (req, res) => {
       questions: one('SELECT COUNT(*) AS n FROM questions WHERE active = 1').n,
       attemptsCompleted: one('SELECT COUNT(*) AS n FROM attempts WHERE finished_at IS NOT NULL').n,
       paidEnrollments: paid.n,
-      revenueInr: paid.total / 100
+      revenueInr: paid.total / 100,
+      reviewsPending: one("SELECT COUNT(*) AS n FROM reviews WHERE status = 'pending'").n
     },
     recentActivity: db.prepare('SELECT username, action, detail, created_at FROM admin_audit ORDER BY id DESC LIMIT 20').all()
   });
