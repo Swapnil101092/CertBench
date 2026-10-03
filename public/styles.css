@@ -197,6 +197,16 @@ main{ flex:1; display:flex; flex-direction:column; }
 }
 .field input:hover{ border-color:color-mix(in srgb, var(--accent) 35%, var(--panel-border)); }
 .field input:focus{ border-color:var(--accent); outline:none; box-shadow:0 0 0 4px var(--accent-soft); }
+.field-hint{ font-size:.76rem; color:var(--text-dim); margin-top:.35rem; line-height:1.4; }
+.field-error{ font-size:.8rem; color:var(--danger); margin-top:.35rem; line-height:1.4; }
+.field-error:empty{ display:none; }
+.field.has-error input{ border-color:var(--danger); }
+.field.has-error input:focus{ box-shadow:0 0 0 4px var(--danger-soft); }
+.pw-checklist{ list-style:none; margin:.5rem 0 0; padding:0; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.2rem .75rem; font-size:.76rem; color:var(--text-dim); }
+.pw-checklist li::before{ content:'\2022'; display:inline-block; width:1.1em; text-align:center; }
+.pw-checklist li.ok{ color:var(--success); }
+.pw-checklist li.ok::before{ content:'\2713'; }
+@media (max-width:420px){ .pw-checklist{ grid-template-columns:1fr; } }
 .login-card .btn{ width:100%; margin-top:.5rem; padding:.9em 1.4em; }
 .login-error{ color:var(--danger); font-size:.85rem; margin-top:-.35rem; margin-bottom:1rem; min-height:1em; }
 .login-notice{ color:var(--success); font-size:.85rem; margin-top:-.35rem; margin-bottom:1rem; background:var(--success-soft); border:1px solid color-mix(in srgb, var(--success) 40%, transparent); border-radius:10px; padding:.65em .85em; }
