@@ -87,7 +87,8 @@ var S = {
   view: 'overview',            // overview | exams | exam | exam-new | settings
   overview: null, exams: [], exam: null, questions: [], settings: null,
   setFilter: 'all', search: '', editingQ: null, showAdd: false, showImport: false, meName: '',
-  users: null, userQuery: '', userDetail: null
+  users: null, userQuery: '', userDetail: null,
+  reviews: null, reviewFilter: 'pending'
 };
 
 // ---------------------------------------------------------------- gate (not signed in / not an admin)
@@ -127,6 +128,7 @@ function header(){
       tab('overview', 'Overview', ['overview']),
       tab('exams', 'Certificates', ['exams', 'exam', 'exam-new']),
       tab('users', 'Users', ['users', 'user', 'user-new']),
+      tab('reviews', 'Reviews', ['reviews']),
       tab('settings', 'Site settings', ['settings'])
     ]),
     el('div', { class: 'adm-top-right' }, [
@@ -148,6 +150,7 @@ function renderApp(){
   else if(S.view === 'users') main.appendChild(viewUsers());
   else if(S.view === 'user') main.appendChild(viewUser());
   else if(S.view === 'user-new') main.appendChild(viewUserNew());
+  else if(S.view === 'reviews') main.appendChild(viewReviews());
   root.appendChild(main);
 }
 
@@ -159,6 +162,7 @@ function navigate(view){
     if(view === 'exam-new'){ S.view = 'exam-new'; renderApp(); return Promise.resolve(); }
     if(view === 'users') return loadUsers(1).then(function(){ S.view = 'users'; renderApp(); });
     if(view === 'user-new'){ S.view = 'user-new'; renderApp(); return Promise.resolve(); }
+    if(view === 'reviews') return loadReviews().then(function(){ S.view = 'reviews'; renderApp(); });
     return Promise.resolve();
   })());
 }
@@ -177,7 +181,8 @@ function viewOverview(){
   var cards = [
     ['Students', c.users], ['Certificates live', c.examsLive], ['Hidden / draft', c.examsHidden],
     ['Questions', c.questions], ['Completed attempts', c.attemptsCompleted],
-    ['Paid enrolments', c.paidEnrollments], ['Revenue', '₹' + Number(c.revenueInr).toLocaleString('en-IN')]
+    ['Paid enrolments', c.paidEnrollments], ['Revenue', '₹' + Number(c.revenueInr).toLocaleString('en-IN')],
+    ['Reviews to approve', c.reviewsPending || 0]
   ];
   var wrap = el('div', {});
   wrap.appendChild(el('h1', { class: 'adm-h1' }, ['Overview']));
@@ -861,12 +866,71 @@ function setAdmin(u, want){
   }));
 }
 
+// ---------------------------------------------------------------- ratings & reviews
+function loadReviews(){
+  var q = S.reviewFilter === 'all' ? '' : '?status=' + S.reviewFilter;
+  return api('/reviews' + q).then(function(d){ S.reviews = d; });
+}
+function stars(n){
+  return el('span', { class: 'adm-stars', title: n + ' out of 5' }, [ '★'.repeat(n), el('span', { class: 'adm-stars-off' }, ['★'.repeat(5 - n)]) ]);
+}
+function reviewStatusPill(st){
+  var map = { pending: ['Waiting', 'adm-pill-warn'], approved: ['Approved', 'adm-pill-live'], hidden: ['Hidden', ''] };
+  var m = map[st] || map.pending;
+  return el('span', { class: 'adm-pill ' + m[1] }, [m[0]]);
+}
+function reviewAction(r, path, opts, msg){
+  var q = S.reviewFilter === 'all' ? '' : '?status=' + S.reviewFilter;
+  return guard(api('/reviews/' + r.id + path + q, opts).then(function(d){ S.reviews = d; renderApp(); toast(msg, 'ok'); }));
+}
+function viewReviews(){
+  var d = S.reviews;
+  var wrap = el('div', {});
+  wrap.appendChild(el('h1', { class: 'adm-h1' }, ['Ratings & reviews']));
+  wrap.appendChild(el('p', { class: 'adm-hint' }, ['Signed-in students can rate CertBench from their exam list. New and edited reviews wait here until you approve them. The home page shows the top 5 approved reviews with 4 or 5 stars (highest rating first, then newest), with the reviewer’s first name and last initial.']));
+  var total = d.counts.pending + d.counts.approved + d.counts.hidden;
+  var filters = [['pending', 'Waiting', d.counts.pending], ['approved', 'Approved', d.counts.approved], ['hidden', 'Hidden', d.counts.hidden], ['all', 'All', total]];
+  wrap.appendChild(el('div', { class: 'adm-toolbar' }, [ el('div', { class: 'adm-chips' }, filters.map(function(f){
+    return el('button', { class: 'adm-chip' + (S.reviewFilter === f[0] ? ' active' : ''), type: 'button', onclick: function(){
+      S.reviewFilter = f[0]; guard(loadReviews().then(renderApp));
+    } }, [f[1] + ' (' + f[2] + ')']);
+  })) ]));
+  if(!d.reviews.length){
+    wrap.appendChild(el('p', { class: 'adm-empty' }, [S.reviewFilter === 'pending' ? 'Nothing waiting for approval.' : 'No reviews here yet.']));
+    return wrap;
+  }
+  d.reviews.forEach(function(r){
+    var actions = [];
+    if(r.status !== 'approved') actions.push(el('button', { class: 'btn btn-primary adm-small', type: 'button', onclick: function(){ reviewAction(r, '/status', { method: 'POST', body: { status: 'approved' } }, 'Approved.' + (r.rating >= 4 ? ' It can now appear on the home page.' : ' (Only 4-5 star reviews are featured on the home page.)')); } }, ['Approve']));
+    if(r.status !== 'hidden') actions.push(el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ reviewAction(r, '/status', { method: 'POST', body: { status: 'hidden' } }, 'Hidden from the website.'); } }, ['Hide']));
+    actions.push(el('button', { class: 'btn btn-ghost adm-small adm-danger-btn', type: 'button', onclick: function(){
+      if(!window.confirm('Delete this review by ' + r.user.name + ' permanently?')) return;
+      reviewAction(r, '', { method: 'DELETE' }, 'Review deleted.');
+    } }, ['Delete']));
+    wrap.appendChild(el('div', { class: 'adm-card adm-review' }, [
+      el('div', { class: 'adm-review-top' }, [
+        stars(r.rating), reviewStatusPill(r.status),
+        r.featured ? el('span', { class: 'adm-pill adm-pill-you' }, ['On home page']) : null,
+        el('span', { class: 'adm-hint adm-review-when' }, ['Updated ' + String(r.updatedAt || '').slice(0, 16) + ' UTC'])
+      ]),
+      el('p', { class: 'adm-review-text' }, [r.comment]),
+      el('div', { class: 'adm-review-foot' }, [
+        el('div', { class: 'adm-hint' }, [ el('span', { class: 'adm-strong' }, [r.user.name]), ' · @' + r.user.username + ' · ' + r.user.email + ' · shown as “' + r.publicName + '”' ]),
+        el('div', { class: 'adm-q-actions' }, actions)
+      ])
+    ]));
+  });
+  return wrap;
+}
+
 // ---------------------------------------------------------------- site settings
 function viewSettings(){
   var s = S.settings;
   var promoOn = el('input', { type: 'checkbox', checked: s.promoEnabled });
   var promoText = el('input', { class: 'adm-input', type: 'text', maxlength: '200', value: s.promoText, placeholder: 'Leave blank for the automatic message' });
   var about = el('textarea', { class: 'adm-input', rows: '9', maxlength: '2000', value: s.aboutText });
+  var cTitle = el('input', { class: 'adm-input', type: 'text', maxlength: '60', value: s.contactTitle, placeholder: 'Contact us' });
+  var cIntro = el('input', { class: 'adm-input', type: 'text', maxlength: '300', value: s.contactIntro, placeholder: 'Optional one-line message under the heading' });
   var address = el('input', { class: 'adm-input', type: 'text', maxlength: '200', value: s.contactAddress });
   var phone = el('input', { class: 'adm-input', type: 'text', maxlength: '20', value: s.contactPhone });
   var email = el('input', { class: 'adm-input', type: 'text', maxlength: '254', value: s.contactEmail });
@@ -879,7 +943,10 @@ function viewSettings(){
     el('h2', {}, ['About text']),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['About CertBench', about]), el('div', { class: 'adm-hint' }, ['Separate paragraphs with a blank line. Leave empty to use the standard text.']), err('aboutText') ]),
     el('div', { class: 'adm-actions' }, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ about.value = s.defaults.aboutText; } }, ['Fill in the standard text to edit it']) ]),
-    el('h2', {}, ['Contact details']),
+    el('h2', {}, ['Contact us panel']),
+    el('p', { class: 'adm-hint' }, ['Shown next to the About text on the home page.']),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Heading', cTitle]), err('contactTitle') ]),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Intro line', cIntro]), err('contactIntro') ]),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['Address', address]), err('contactAddress') ]),
     el('div', { class: 'adm-grid2' }, [
       el('div', { class: 'adm-field' }, [ el('label', {}, ['Phone', phone]), err('contactPhone') ]),
@@ -890,6 +957,7 @@ function viewSettings(){
         Array.prototype.forEach.call(card.querySelectorAll('.adm-err'), function(n){ n.textContent = ''; });
         api('/settings', { method: 'PUT', body: {
           promoEnabled: promoOn.checked, promoText: promoText.value, aboutText: about.value,
+          contactTitle: cTitle.value, contactIntro: cIntro.value,
           contactAddress: address.value, contactPhone: phone.value, contactEmail: email.value
         } }).then(function(d){
           S.settings = d.settings; toast('Saved. The website shows the change immediately.', 'ok');
