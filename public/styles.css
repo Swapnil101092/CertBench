@@ -725,6 +725,24 @@ footer.app-foot{ text-align:center; padding:1.75rem 1.5rem; color:var(--text-fai
 .about-copy p{ margin:0 0 1rem; }
 .about-copy p:last-child{ margin-bottom:0; }
 @media (max-width:820px){ .about-wrap{ grid-template-columns:1fr; } }
+.about-photos{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:.75rem; margin-top:1.5rem; }
+.about-photos-one{ grid-template-columns:1fr; }
+.about-photo{ position:relative; display:block; padding:0; border:1px solid var(--panel-border); border-radius:var(--radius-lg); overflow:hidden; background:var(--bg-raised); cursor:zoom-in; aspect-ratio:4/3; font:inherit; color:inherit; }
+.about-photos-one .about-photo{ aspect-ratio:16/9; }
+.about-photo img{ width:100%; height:100%; object-fit:cover; display:block; transition:transform .3s ease; }
+.about-photo:hover img, .about-photo:focus-visible img{ transform:scale(1.04); }
+.about-photo:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.about-photo-cap{ position:absolute; left:0; right:0; bottom:0; padding:1.4rem .7rem .55rem; font-size:.78rem; line-height:1.35; text-align:left; color:#fff; background:linear-gradient(transparent, rgba(0,0,0,.72)); }
+.photo-lb{ position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; padding:3.5rem 1rem; background:rgba(5,8,15,.88); }
+.photo-lb-fig{ margin:0; max-width:min(1100px,100%); max-height:100%; display:flex; flex-direction:column; align-items:center; gap:.75rem; }
+.photo-lb-img{ max-width:100%; max-height:calc(100vh - 9rem); border-radius:12px; object-fit:contain; }
+.photo-lb-cap{ margin:0; color:#e6e9ef; font-size:.92rem; text-align:center; }
+.photo-lb-btn{ position:absolute; width:2.75rem; height:2.75rem; border-radius:999px; border:1px solid rgba(255,255,255,.25); background:rgba(255,255,255,.08); color:#fff; font-size:1.6rem; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.photo-lb-btn:hover{ background:rgba(255,255,255,.18); }
+.photo-lb-close{ top:1rem; right:1rem; }
+.photo-lb-prev{ left:1rem; top:50%; transform:translateY(-50%); }
+.photo-lb-next{ right:1rem; top:50%; transform:translateY(-50%); }
+@media (max-width:560px){ .about-photos{ grid-template-columns:repeat(2,1fr); } .photo-lb-prev, .photo-lb-next{ top:auto; bottom:1rem; transform:none; } }
 
 /* contact us panel (inside the About section; text edited in the admin panel) */
 .contact-panel{ min-width:0; padding:clamp(1.25rem,3vw,1.6rem); border-radius:var(--radius-lg); background:var(--bg-raised); border:1px solid var(--panel-border); scroll-margin-top:5rem; }

@@ -1,6 +1,7 @@
 // Site settings editable from the admin panel. Anything not saved yet falls back to the
 // defaults below, so a fresh install looks exactly as it always has.
 const db = require('./db');
+const photos = require('./photos');
 
 const DEFAULT_ABOUT = [
   'CertBench is a practice platform for people preparing for IT certification exams. Every question is an original practice question written for CertBench, not a copy of real exam content, so you are practicing the concepts rather than memorizing real exam questions.',
@@ -54,6 +55,7 @@ function getPublic(){
   return {
     promo: { enabled: r.promo_enabled === '1', text: r.promo_text.trim() },
     about: aboutSource.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
+    aboutPhotos: photos.list().map(p => ({ id: p.id, caption: p.caption, url: p.url })),
     contact: { title: r.contact_title.trim() || DEFAULTS.contact_title, intro: r.contact_intro.trim(), address: r.contact_address, phone: r.contact_phone, email: r.contact_email }
   };
 }
@@ -77,7 +79,7 @@ function validate(input){
   if('aboutText' in input){
     const v = str(input.aboutText);
     if(v === null) errors.aboutText = 'Must be text.';
-    else if(v.length > 2000) errors.aboutText = 'Keep the About text under 2000 characters.';
+    else if(v.length > 2000) errors.aboutText = 'Keep the About Us text under 2000 characters.';
     else if(CONTROL_RE.test(v)) errors.aboutText = 'Contains characters that are not allowed.';
     else clean.about_text = v;
   }

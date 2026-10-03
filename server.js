@@ -15,9 +15,9 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-// Admin requests may carry a CSV of questions, so they get a larger limit. This must come BEFORE
+// Admin requests may carry a CSV of questions or an About Us photo, so they get a larger limit. This must come BEFORE
 // the general parser (which then skips bodies that are already parsed).
-app.use('/api/admin', express.json({ limit: '2mb' }));
+app.use('/api/admin', express.json({ limit: '3mb' }));
 app.use(express.json({ limit: '100kb' }));
 
 // Basic abuse protection on auth endpoints (login/OTP brute force, spam registration).
