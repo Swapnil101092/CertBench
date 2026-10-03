@@ -40,7 +40,7 @@ function brandLogo(){
 }
 function clear(node){ while(node.firstChild) node.removeChild(node.firstChild); }
 function getToken(){ try{ return localStorage.getItem(TOKEN_KEY); }catch(e){ return null; } }
-function rupees(n){ return n > 0 ? '\u20b9' + Number(n).toLocaleString('en-IN') : 'Free'; }
+function rupees(n){ return n > 0 ? '₹' + Number(n).toLocaleString('en-IN') : 'Free'; }
 
 function api(path, opts){
   opts = opts || {};
@@ -105,7 +105,7 @@ function renderGate(kind){
     el('p', {}, [m[1]])
   ]);
   if(kind === 'notadmin'){
-    card.appendChild(el('p', { class: 'adm-hint' }, ['The site owner can grant access by running this command on the server (replace the name with the account\u2019s username):']));
+    card.appendChild(el('p', { class: 'adm-hint' }, ['The site owner can grant access by running this command on the server (replace the name with the account’s username):']));
     card.appendChild(el('code', { class: 'adm-code' }, ['npm run make-admin -- username']));
   }
   card.appendChild(el('div', { class: 'adm-gate-actions' }, [
@@ -131,7 +131,7 @@ function header(){
     ]),
     el('div', { class: 'adm-top-right' }, [
       S.meName ? el('span', { class: 'adm-who' }, [S.meName]) : null,
-      el('a', { class: 'btn btn-ghost adm-small', href: '/' }, ['\u2190 Back to site'])
+      el('a', { class: 'btn btn-ghost adm-small', href: '/' }, ['← Back to site'])
     ])
   ]);
 }
@@ -177,7 +177,7 @@ function viewOverview(){
   var cards = [
     ['Students', c.users], ['Certificates live', c.examsLive], ['Hidden / draft', c.examsHidden],
     ['Questions', c.questions], ['Completed attempts', c.attemptsCompleted],
-    ['Paid enrolments', c.paidEnrollments], ['Revenue', '\u20b9' + Number(c.revenueInr).toLocaleString('en-IN')]
+    ['Paid enrolments', c.paidEnrollments], ['Revenue', '₹' + Number(c.revenueInr).toLocaleString('en-IN')]
   ];
   var wrap = el('div', {});
   wrap.appendChild(el('h1', { class: 'adm-h1' }, ['Overview']));
@@ -187,7 +187,7 @@ function viewOverview(){
   wrap.appendChild(el('div', { class: 'adm-card' }, [
     el('h2', {}, ['How to add a new certificate']),
     el('ol', { class: 'adm-steps' }, [
-      el('li', {}, [ el('b', {}, ['Certificates \u2192 Add certificate. ']), 'Give it a name, badge, price and pass mark. It starts hidden (a draft).' ]),
+      el('li', {}, [ el('b', {}, ['Certificates → Add certificate. ']), 'Give it a name, badge, price and pass mark. It starts hidden (a draft).' ]),
       el('li', {}, [ el('b', {}, ['Add questions. ']), 'One at a time, or paste/upload a CSV to add many at once. Every one of the 5 sets needs at least one question.' ]),
       el('li', {}, [ el('b', {}, ['Publish. ']), 'It appears on the website straight away. You can hide it again at any time.' ])
     ])
@@ -224,10 +224,10 @@ function viewExams(){
       return el('tr', {}, [
         el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug]) ]) ]) ]),
         el('td', {}, [rupees(e.priceInr)]),
-        el('td', {}, [e.durationMinutes + ' min \u00b7 ' + e.passPct + '%']),
+        el('td', {}, [e.durationMinutes + ' min · ' + e.passPct + '%']),
         el('td', {}, [ el('span', { class: 'adm-mono' }, [e.setCounts.join(' / ')]), ' (' + e.totalQuestions + ' total)' ]),
         el('td', {}, [statusPill(e)]),
-        el('td', {}, [e.paidEnrollments + ' paid \u00b7 ' + e.attempts + ' attempts']),
+        el('td', {}, [e.paidEnrollments + ' paid · ' + e.attempts + ' attempts']),
         el('td', {}, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ openExam(e.id); } }, ['Manage']) ])
       ]);
     }))
@@ -288,7 +288,7 @@ function examFormFields(exam, creating){
     el('div', { class: 'adm-grid3' }, [
       field('durationMinutes', 'Time limit (minutes)', inputs.durationMinutes),
       field('passPct', 'Pass mark (%)', inputs.passPct),
-      field('priceInr', 'Price (\u20b9)', inputs.priceInr, '0 = free')
+      field('priceInr', 'Price (₹)', inputs.priceInr, '0 = free')
     ])
   ]);
 
@@ -316,7 +316,7 @@ function examFormFields(exam, creating){
 function viewExamNew(){
   var form = examFormFields(null, true);
   var wrap = el('div', {});
-  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('exams'); } }, ['\u2190 All certificates']));
+  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('exams'); } }, ['← All certificates']));
   wrap.appendChild(el('h1', { class: 'adm-h1' }, ['Add a certificate']));
   wrap.appendChild(el('div', { class: 'adm-card' }, [
     form.node,
@@ -324,7 +324,7 @@ function viewExamNew(){
     el('div', { class: 'adm-actions' }, [
       el('button', { class: 'btn btn-primary', type: 'button', onclick: function(){
         guard(api('/exams', { method: 'POST', body: form.read() }).then(function(d){
-          toast('Created \u201c' + d.exam.name + '\u201d as a draft. Now add its questions.', 'ok');
+          toast('Created “' + d.exam.name + '” as a draft. Now add its questions.', 'ok');
           return openExam(d.exam.id);
         }).catch(function(err){
           if(err.data && err.data.fields){ form.showErrors(err.data.fields); toast(err.message, 'err'); return; }
@@ -351,7 +351,7 @@ function replaceQuestionsSection(){
 function viewExam(){
   var e = S.exam;
   var wrap = el('div', {});
-  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('exams'); } }, ['\u2190 All certificates']));
+  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('exams'); } }, ['← All certificates']));
   wrap.appendChild(el('div', { class: 'adm-row-between' }, [
     el('div', { class: 'adm-title-row' }, [ badge(e), el('h1', { class: 'adm-h1' }, [e.name]), statusPill(e) ]),
     el('button', { class: e.active ? 'btn btn-ghost' : 'btn btn-primary', type: 'button', onclick: function(){
@@ -385,9 +385,9 @@ function viewExam(){
   // danger zone
   var confirmInput = el('input', { class: 'adm-input', type: 'text', placeholder: 'Type the certificate name to confirm' });
   var delBtn = el('button', { class: 'btn btn-danger', type: 'button', disabled: true, onclick: function(){
-    if(!window.confirm('Permanently delete \u201c' + e.name + '\u201d, its ' + e.totalQuestions + ' questions and ' + e.attempts + ' recorded attempts? This cannot be undone.')) return;
+    if(!window.confirm('Permanently delete “' + e.name + '”, its ' + e.totalQuestions + ' questions and ' + e.attempts + ' recorded attempts? This cannot be undone.')) return;
     guard(api('/exams/' + e.id, { method: 'DELETE', body: { confirmName: confirmInput.value } }).then(function(){
-      toast('Deleted \u201c' + e.name + '\u201d.', 'ok');
+      toast('Deleted “' + e.name + '”.', 'ok');
       return navigate('exams');
     }));
   } }, ['Delete permanently']);
@@ -395,9 +395,9 @@ function viewExam(){
   wrap.appendChild(el('div', { class: 'adm-card adm-danger' }, [
     el('h2', {}, ['Delete this certificate']),
     e.paidEnrollments > 0
-      ? el('p', {}, [e.paidEnrollments + ' student(s) have paid for this certificate, so it cannot be deleted. Use \u201cHide from students\u201d instead: it disappears from the website, and every payment and result record is kept.'])
+      ? el('p', {}, [e.paidEnrollments + ' student(s) have paid for this certificate, so it cannot be deleted. Use “Hide from students” instead: it disappears from the website, and every payment and result record is kept.'])
       : el('div', {}, [
-          el('p', {}, ['This removes the certificate, all ' + e.totalQuestions + ' questions and ' + e.attempts + ' recorded attempts for good. If you just want it off the website for now, use \u201cHide from students\u201d instead.']),
+          el('p', {}, ['This removes the certificate, all ' + e.totalQuestions + ' questions and ' + e.attempts + ' recorded attempts for good. If you just want it off the website for now, use “Hide from students” instead.']),
           confirmInput, delBtn
         ])
   ]));
@@ -412,7 +412,7 @@ function buildQuestionsSection(){
   var empties = counts.map(function(c, i){ return c === 0 ? i + 1 : null; }).filter(Boolean);
   sec.appendChild(el('h2', {}, ['Questions']));
   sec.appendChild(el('p', { class: 'adm-hint' }, [
-    counts.map(function(c, i){ return 'Set ' + (i + 1) + ': ' + c; }).join('   \u00b7   '),
+    counts.map(function(c, i){ return 'Set ' + (i + 1) + ': ' + c; }).join('   ·   '),
     '.  Students get exactly what is in each set (sets do not have to be the same size).'
   ]));
   if(empties.length) sec.appendChild(el('p', { class: 'adm-warn' }, ['Empty: Set ' + empties.join(', Set ') + '. Every set needs at least one question before this certificate can be published.']));
@@ -465,7 +465,7 @@ function buildQuestionRow(x){
     ]),
     el('div', { class: 'adm-q-text' }, [x.text]),
     el('ol', { class: 'adm-q-opts', type: 'A' }, x.options.map(function(o, i){
-      return el('li', { class: i === x.correctIndex ? 'correct' : '' }, [o + (i === x.correctIndex ? '  \u2713 correct' : '')]);
+      return el('li', { class: i === x.correctIndex ? 'correct' : '' }, [o + (i === x.correctIndex ? '  ✓ correct' : '')]);
     })),
     el('div', { class: 'adm-q-actions' }, [
       el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ S.editingQ = x.id; replaceQuestionsSection(); } }, ['Edit']),
@@ -475,7 +475,7 @@ function buildQuestionRow(x){
 }
 
 function removeQuestion(x){
-  if(!window.confirm('Remove this question from Set ' + x.set + '?\n\n\u201c' + x.text.slice(0, 120) + '\u201d')) return;
+  if(!window.confirm('Remove this question from Set ' + x.set + '?\n\n“' + x.text.slice(0, 120) + '”')) return;
   var everywhere = false;
   if(x.alsoInSets.length){
     everywhere = window.confirm('The same question also appears in Set ' + x.alsoInSets.join(', ') + '.\n\nOK = remove it from ALL sets.\nCancel = remove it from Set ' + x.set + ' only.');
@@ -602,7 +602,7 @@ function buildImportPanel(){
           var list = (err.data && err.data.rowErrors) || [];
           if(list.length){
             errBox.appendChild(el('ul', { class: 'adm-errlist' }, list.map(function(r){ return el('li', {}, ['Row ' + r.row + ': ' + r.message]); })));
-            if(err.data.totalErrors > list.length) errBox.appendChild(el('p', { class: 'adm-hint' }, ['\u2026and ' + (err.data.totalErrors - list.length) + ' more.']));
+            if(err.data.totalErrors > list.length) errBox.appendChild(el('p', { class: 'adm-hint' }, ['…and ' + (err.data.totalErrors - list.length) + ' more.']));
           }
         });
       } }, ['Import'])
@@ -625,7 +625,7 @@ function buildUsersTable(){
   var d = S.users;
   var box = el('div', { id: 'adm-users-table' });
   if(!d.users.length){
-    box.appendChild(el('p', { class: 'adm-empty' }, [S.userQuery ? 'No users match \u201c' + S.userQuery + '\u201d.' : 'No users yet.']));
+    box.appendChild(el('p', { class: 'adm-empty' }, [S.userQuery ? 'No users match “' + S.userQuery + '”.' : 'No users yet.']));
     return box;
   }
   box.appendChild(el('div', { class: 'adm-card adm-table-wrap' }, [ el('table', { class: 'adm-table' }, [
@@ -637,16 +637,16 @@ function buildUsersTable(){
         el('td', {}, [u.mobile]),
         el('td', {}, [String(u.createdAt || '').slice(0, 10)]),
         el('td', {}, [rolePill(u)]),
-        el('td', {}, [u.paidEnrollments + ' paid \u00b7 ' + u.attempts + ' attempts']),
+        el('td', {}, [u.paidEnrollments + ' paid · ' + u.attempts + ' attempts']),
         el('td', {}, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ openUser(u.id); } }, ['Manage']) ])
       ]);
     }))
   ]) ]));
   if(d.pages > 1){
     box.appendChild(el('div', { class: 'adm-pager' }, [
-      el('button', { class: 'btn btn-ghost adm-small', type: 'button', disabled: d.page <= 1, onclick: function(){ guard(loadUsers(d.page - 1).then(refreshUsersTable)); } }, ['\u2190 Previous']),
-      el('span', { class: 'adm-hint' }, ['Page ' + d.page + ' of ' + d.pages + '  \u00b7  ' + d.total + ' users']),
-      el('button', { class: 'btn btn-ghost adm-small', type: 'button', disabled: d.page >= d.pages, onclick: function(){ guard(loadUsers(d.page + 1).then(refreshUsersTable)); } }, ['Next \u2192'])
+      el('button', { class: 'btn btn-ghost adm-small', type: 'button', disabled: d.page <= 1, onclick: function(){ guard(loadUsers(d.page - 1).then(refreshUsersTable)); } }, ['← Previous']),
+      el('span', { class: 'adm-hint' }, ['Page ' + d.page + ' of ' + d.pages + '  ·  ' + d.total + ' users']),
+      el('button', { class: 'btn btn-ghost adm-small', type: 'button', disabled: d.page >= d.pages, onclick: function(){ guard(loadUsers(d.page + 1).then(refreshUsersTable)); } }, ['Next →'])
     ]));
   }
   return box;
@@ -681,16 +681,17 @@ function userFormFields(u, creating){
     name: el('input', { class: 'adm-input', type: 'text', maxlength: '80', value: u ? u.name : '' }),
     email: el('input', { class: 'adm-input', type: 'email', maxlength: '254', value: u ? u.email : '' }),
     mobile: el('input', { class: 'adm-input', type: 'tel', maxlength: '14', value: u ? u.mobile : '' }),
-    username: el('input', { class: 'adm-input', type: 'text', maxlength: '32', value: u ? u.username : '' })
+    // New accounts: 3-20 letters. Editing allows up to 32 so older usernames still fit.
+    username: el('input', { class: 'adm-input', type: 'text', maxlength: creating ? '20' : '32', value: u ? u.username : '' })
   };
-  if(creating) inputs.password = el('input', { class: 'adm-input', type: 'text', maxlength: '72', autocomplete: 'new-password', value: '' });
+  if(creating) inputs.password = el('input', { class: 'adm-input', type: 'text', maxlength: '64', autocomplete: 'new-password', value: '' });
   function f(key, label, hint){
     return el('div', { class: 'adm-field' }, [ el('label', {}, [label, inputs[key]]), hint ? el('div', { class: 'adm-hint' }, [hint]) : null, el('div', { class: 'adm-err', 'data-for': key }) ]);
   }
   var node = el('div', { class: 'adm-form' }, [
-    el('div', { class: 'adm-grid2' }, [ f('name', 'Full name'), f('username', 'Username', 'Used to sign in. 3-32 letters, numbers, dot or underscore.') ]),
+    el('div', { class: 'adm-grid2' }, [ f('name', 'Full name'), f('username', 'Username', 'Used to sign in. 3-20 letters; single dots or underscores between letters. No numbers.') ]),
     el('div', { class: 'adm-grid2' }, [ f('email', 'Email', 'Login codes are sent here.'), f('mobile', 'Mobile (10 digits)') ]),
-    creating ? f('password', 'Starting password', 'At least 6 characters with a letter and a number. Share it with them privately; they can change it later with \u201cForgot password?\u201d.') : null
+    creating ? f('password', 'Starting password', '8-64 characters with an uppercase letter, a lowercase letter, a number and a special character; must not contain the username. Share it with them privately; they can change it later with “Forgot password?”.') : null
   ]);
   return {
     node: node,
@@ -711,7 +712,7 @@ function withFieldErrors(form){
 function viewUserNew(){
   var form = userFormFields(null, true);
   return el('div', {}, [
-    el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('users'); } }, ['\u2190 All users']),
+    el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('users'); } }, ['← All users']),
     el('h1', { class: 'adm-h1' }, ['Add a user']),
     el('div', { class: 'adm-card' }, [
       form.node,
@@ -736,11 +737,11 @@ function openUser(id){
 function viewUser(){
   var D = S.userDetail, u = D.user;
   var wrap = el('div', {});
-  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('users'); } }, ['\u2190 All users']));
+  wrap.appendChild(el('button', { class: 'adm-back', type: 'button', onclick: function(){ navigate('users'); } }, ['← All users']));
   wrap.appendChild(el('div', { class: 'adm-title-row' }, [
     el('h1', { class: 'adm-h1' }, [u.name]), rolePill(u), D.isSelf ? el('span', { class: 'adm-pill adm-pill-you' }, ['You']) : null
   ]));
-  wrap.appendChild(el('p', { class: 'adm-hint' }, ['@' + u.username + '  \u00b7  joined ' + String(u.createdAt || '').slice(0, 10) + '  \u00b7  ' + u.paidEnrollments + ' paid enrolment(s)' + (u.paidTotalInr ? ' (' + rupees(u.paidTotalInr) + ')' : '') + '  \u00b7  ' + u.attempts + ' completed attempt(s)']));
+  wrap.appendChild(el('p', { class: 'adm-hint' }, ['@' + u.username + '  ·  joined ' + String(u.createdAt || '').slice(0, 10) + '  ·  ' + u.paidEnrollments + ' paid enrolment(s)' + (u.paidTotalInr ? ' (' + rupees(u.paidTotalInr) + ')' : '') + '  ·  ' + u.attempts + ' completed attempt(s)']));
 
   // ---- details
   var form = userFormFields(u, false);
@@ -768,10 +769,10 @@ function viewUser(){
     } }, ['Make admin']));
   } else {
     adminCard.appendChild(el('p', {}, [
-      'This account is an admin' + (viaPanel && viaSetting ? ', granted both here in the panel and through the ADMIN_EMAILS setting.' : viaPanel ? ' (granted here in the panel or with make-admin).' : ' through the ADMIN_EMAILS setting in your host\u2019s dashboard.')
+      'This account is an admin' + (viaPanel && viaSetting ? ', granted both here in the panel and through the ADMIN_EMAILS setting.' : viaPanel ? ' (granted here in the panel or with make-admin).' : ' through the ADMIN_EMAILS setting in your host’s dashboard.')
     ]));
-    if(viaSetting) adminCard.appendChild(el('p', { class: 'adm-warn' }, ['To fully remove admin access, also delete ' + u.email + ' from ADMIN_EMAILS in your host\u2019s dashboard and redeploy. It can\u2019t be changed from here.']));
-    if(D.isSelf) adminCard.appendChild(el('p', { class: 'adm-hint' }, ['You can\u2019t remove your own admin access, so nobody gets locked out by accident. Ask another admin if you want it removed.']));
+    if(viaSetting) adminCard.appendChild(el('p', { class: 'adm-warn' }, ['To fully remove admin access, also delete ' + u.email + ' from ADMIN_EMAILS in your host’s dashboard and redeploy. It can’t be changed from here.']));
+    if(D.isSelf) adminCard.appendChild(el('p', { class: 'adm-hint' }, ['You can’t remove your own admin access, so nobody gets locked out by accident. Ask another admin if you want it removed.']));
     else if(viaPanel) adminCard.appendChild(el('button', { class: 'btn btn-danger', type: 'button', onclick: function(){
       if(!window.confirm('Remove admin access from ' + u.name + '? They stay signed in as a normal student and lose the admin panel on their next click.')) return;
       setAdmin(u, false);
@@ -780,11 +781,11 @@ function viewUser(){
   wrap.appendChild(adminCard);
 
   // ---- password + sessions
-  var pw = el('input', { class: 'adm-input adm-narrow', type: 'text', maxlength: '72', autocomplete: 'new-password', placeholder: 'New password' });
+  var pw = el('input', { class: 'adm-input adm-narrow', type: 'text', maxlength: '64', autocomplete: 'new-password', placeholder: 'New password' });
   var pwErr = el('div', { class: 'adm-err' });
   wrap.appendChild(el('div', { class: 'adm-card' }, D.isSelf ? [
     el('h2', {}, ['Password and sign-ins']),
-    el('p', { class: 'adm-hint' }, ['To change your own password, sign out and use \u201cForgot password?\u201d on the sign-in page.'])
+    el('p', { class: 'adm-hint' }, ['To change your own password, sign out and use “Forgot password?” on the sign-in page.'])
   ] : [
     el('h2', {}, ['Password and sign-ins']),
     el('p', {}, ['Set a new password if they are locked out. This also signs them out on every device.']),
@@ -798,7 +799,7 @@ function viewUser(){
       } }, ['Set new password'])
     ]),
     pwErr,
-    el('p', { class: 'adm-hint' }, ['At least 6 characters with a letter and a number.']),
+    el('p', { class: 'adm-hint' }, ['8-64 characters with an uppercase letter, a lowercase letter, a number and a special character; no spaces; must not contain their username.']),
     el('div', { class: 'adm-actions' }, [
       el('button', { class: 'btn btn-ghost', type: 'button', onclick: function(){
         if(!window.confirm('Sign ' + u.name + ' out on every device? Their password stays the same.')) return;
@@ -812,7 +813,7 @@ function viewUser(){
   act.appendChild(D.enrollments.length ? el('div', { class: 'adm-table-wrap' }, [ el('table', { class: 'adm-table' }, [
     el('thead', {}, [ el('tr', {}, ['Certificate', 'Amount', 'Status', 'Paid at (UTC)', 'Payment ID'].map(function(h){ return el('th', {}, [h]); })) ]),
     el('tbody', {}, D.enrollments.map(function(e){
-      return el('tr', {}, [ el('td', {}, [e.exam]), el('td', {}, [rupees(e.amountInr) + (e.devMode && e.amountInr > 0 ? ' (test mode)' : '')]), el('td', {}, [e.status]), el('td', {}, [e.paidAt || '\u2014']), el('td', { class: 'adm-mono' }, [e.paymentId || '\u2014']) ]);
+      return el('tr', {}, [ el('td', {}, [e.exam]), el('td', {}, [rupees(e.amountInr) + (e.devMode && e.amountInr > 0 ? ' (test mode)' : '')]), el('td', {}, [e.status]), el('td', {}, [e.paidAt || '—']), el('td', { class: 'adm-mono' }, [e.paymentId || '—']) ]);
     }))
   ]) ]) : el('p', { class: 'adm-hint' }, ['None.']));
   act.appendChild(el('h2', {}, ['Latest results']));
@@ -826,7 +827,7 @@ function viewUser(){
 
   // ---- delete
   if(D.isSelf){
-    wrap.appendChild(el('div', { class: 'adm-card adm-danger' }, [ el('h2', {}, ['Delete this account']), el('p', {}, ['You can\u2019t delete your own account while signed in as it.']) ]));
+    wrap.appendChild(el('div', { class: 'adm-card adm-danger' }, [ el('h2', {}, ['Delete this account']), el('p', {}, ['You can’t delete your own account while signed in as it.']) ]));
   } else {
     var confirmInput = el('input', { class: 'adm-input', type: 'text', placeholder: 'Type the username (' + u.username + ') to confirm' });
     var delBtn = el('button', { class: 'btn btn-danger', type: 'button', disabled: true, onclick: function(){
@@ -835,7 +836,7 @@ function viewUser(){
       if(!window.confirm(msg)) return;
       guard(api('/users/' + u.id, { method: 'DELETE', body: { confirmUsername: confirmInput.value } }).then(function(d){
         toast(d.stillInAdminEmails
-          ? 'Deleted. Their email is still listed in ADMIN_EMAILS: remove it in your host\u2019s dashboard, or anyone registering with that email would get admin access.'
+          ? 'Deleted. Their email is still listed in ADMIN_EMAILS: remove it in your host’s dashboard, or anyone registering with that email would get admin access.'
           : 'Deleted ' + u.name + '.', d.stillInAdminEmails ? 'err' : 'ok');
         return navigate('users');
       }));
@@ -874,7 +875,7 @@ function viewSettings(){
   var card = el('div', { class: 'adm-card' }, [
     el('h2', {}, ['Announcement banner']),
     el('label', { class: 'adm-check' }, [promoOn, ' Show the banner at the top of the landing page']),
-    el('div', { class: 'adm-field' }, [ el('label', {}, ['Message', promoText]), el('div', { class: 'adm-hint' }, ['Blank = an automatic line such as \u201c6 certifications ready to practice\u201d. If you change the message, people who closed the old one will see it again.']), err('promoText') ]),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Message', promoText]), el('div', { class: 'adm-hint' }, ['Blank = an automatic line such as “6 certifications ready to practice”. If you change the message, people who closed the old one will see it again.']), err('promoText') ]),
     el('h2', {}, ['About text']),
     el('div', { class: 'adm-field' }, [ el('label', {}, ['About CertBench', about]), el('div', { class: 'adm-hint' }, ['Separate paragraphs with a blank line. Leave empty to use the standard text.']), err('aboutText') ]),
     el('div', { class: 'adm-actions' }, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ about.value = s.defaults.aboutText; } }, ['Fill in the standard text to edit it']) ]),

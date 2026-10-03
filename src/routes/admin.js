@@ -10,7 +10,7 @@ const router = express.Router();
 router.use(requireAdmin);          // every route below needs a logged-in admin (checked in the database each time)
 
 const SET_COUNT = 5;
-const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
+const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f]/;
 
 function audit(req, action, detail){
   db.prepare('INSERT INTO admin_audit (user_id, username, action, detail) VALUES (?, ?, ?, ?)')
@@ -383,9 +383,15 @@ function validateUserFields(body, current){
   const b = body || {};
   const fields = {};
   const values = {};
-  const want = (k) => current === null || b[k] !== undefined;
-  if(want('name')){ const e = V.checkName(b.name); if(e) fields.name = e; else values.name = V.clean.name(b.name); }
-  if(want('email')){
+  // Creating: every field is checked. Editing: only fields that were sent AND actually changed, so an
+  // older account (e.g. a username with digits from before the current rules) can still be edited.
+  const want = (k, norm) => {
+    if(current === null) return true;
+    if(b[k] === undefined) return false;
+    return typeof b[k] !== 'string' || norm(b[k]) !== String(current[k]);
+  };
+  if(want('name', V.clean.name)){ const e = V.checkName(b.name); if(e) fields.name = e; else values.name = V.clean.name(b.name); }
+  if(want('email', V.clean.email)){
     const e = V.checkEmail(b.email);
     if(e) fields.email = e;
     else{
@@ -395,8 +401,17 @@ function validateUserFields(body, current){
       else values.email = email;
     }
   }
-  if(want('mobile')){ const e = V.checkMobile(b.mobile); if(e) fields.mobile = e; else values.mobile = V.clean.mobile(b.mobile); }
-  if(want('username')){
+  if(want('mobile', V.clean.mobile)){
+    const e = V.checkMobile(b.mobile);
+    if(e) fields.mobile = e;
+    else{
+      const mobile = V.clean.mobile(b.mobile);
+      const other = db.prepare('SELECT id FROM users WHERE mobile = ?').get(mobile);
+      if(other && (!current || other.id !== current.id)) fields.mobile = 'Another account already uses this mobile number.';
+      else values.mobile = mobile;
+    }
+  }
+  if(want('username', V.clean.username)){
     const e = V.checkUsername(b.username);
     if(e) fields.username = e;
     else{
@@ -407,7 +422,7 @@ function validateUserFields(body, current){
     }
   }
   if(current === null){
-    const e = V.checkPassword(b.password); if(e) fields.password = e;
+    const e = V.checkPassword(b.password, typeof b.username === 'string' ? b.username : ''); if(e) fields.password = e;
   }
   return { fields, values };
 }
@@ -458,7 +473,8 @@ router.put('/users/:id', (req, res) => {
   const u = loadUser(req, res); if(!u) return;
   const { fields, values } = validateUserFields(req.body, u);
   if(Object.keys(fields).length) return fail(res, 400, 'Please fix the highlighted fields.', { fields });
-  if(!Object.keys(values).length) return fail(res, 400, 'Nothing to save.');
+  // Nothing changed: not an error, just report the user as-is.
+  if(!Object.keys(values).length) return res.json({ user: describeUser(u), adminChanged: false });
   const cols = Object.keys(values);
   try{
     db.prepare(`UPDATE users SET ${cols.map(c => c + ' = ?').join(', ')} WHERE id = ?`).run(...cols.map(c => values[c]), u.id);
@@ -475,7 +491,7 @@ router.put('/users/:id', (req, res) => {
 router.post('/users/:id/password', (req, res) => {
   const u = loadUser(req, res); if(!u) return;
   if(isSelf(req, u)) return fail(res, 400, 'To change your own password, sign out and use "Forgot password?" on the sign-in page.');
-  const e = V.checkPassword((req.body || {}).password);
+  const e = V.checkPassword((req.body || {}).password, u.username);
   if(e) return fail(res, 400, e, { fields: { password: e } });
   db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(bcrypt.hashSync(String(req.body.password), 10), u.id);
   audit(req, 'user.password', '@' + u.username);

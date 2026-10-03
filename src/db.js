@@ -145,6 +145,9 @@ try{ raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)
   console.warn('Could not add a unique index on users.email (likely pre-existing duplicate emails in the database) — new registrations are still checked at the application level, but consider cleaning up duplicates.');
 }
 
+// Lookups by mobile number (registration rejects a number that is already in use).
+try{ raw.exec('CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile)'); }catch(e){}
+
 // Thin wrapper so the rest of the app can keep using the same
 // db.prepare(...).run/get/all(...) and db.transaction(fn) style regardless
 // of which underlying SQLite driver is in use.
