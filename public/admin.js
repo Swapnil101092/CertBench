@@ -179,7 +179,8 @@ function openExam(id){
 function viewOverview(){
   var c = S.overview.counts;
   var cards = [
-    ['Students', c.users], ['Certificates live', c.examsLive], ['Hidden / draft', c.examsHidden],
+    ['Students', c.users], ['Active now (' + S.overview.activeWindowMinutes + ' min)', c.activeUsers],
+    ['Certificates live', c.examsLive], ['Hidden / draft', c.examsHidden],
     ['Questions', c.questions], ['Completed attempts', c.attemptsCompleted],
     ['Paid enrolments', c.paidEnrollments], ['Revenue', '₹' + Number(c.revenueInr).toLocaleString('en-IN')],
     ['Reviews to approve', c.reviewsPending || 0]
@@ -637,7 +638,7 @@ function buildUsersTable(){
     el('thead', {}, [ el('tr', {}, ['Name', 'Email', 'Mobile', 'Joined (UTC)', 'Role', 'Activity', ''].map(function(h){ return el('th', {}, [h]); })) ]),
     el('tbody', {}, d.users.map(function(u){
       return el('tr', {}, [
-        el('td', {}, [ el('div', { class: 'adm-strong' }, [u.name, ' ', youTag(u)]), el('div', { class: 'adm-hint' }, ['@' + u.username]) ]),
+        el('td', {}, [ el('div', { class: 'adm-strong' }, [u.name, ' ', youTag(u), ' ', u.activeNow ? el('span', { class: 'adm-pill adm-pill-live', title: 'Used the site in the last few minutes' }, ['Active now']) : null]), el('div', { class: 'adm-hint' }, ['@' + u.username]) ]),
         el('td', {}, [u.email]),
         el('td', {}, [u.mobile]),
         el('td', {}, [String(u.createdAt || '').slice(0, 10)]),

@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const bcrypt = require('bcryptjs');
-const { requireAdmin, isAdminUser, adminEmailList, adminEmailsActive } = require('../auth');
+const { requireAdmin, isAdminUser, adminEmailList, adminEmailsActive, countActiveUsers, ACTIVE_WINDOW_MINUTES } = require('../auth');
 const V = require('../validation');
 const { parseCsv, toQuestionRows } = require('../csv');
 const settings = require('../settings');
@@ -369,7 +369,9 @@ function describeUser(u){
   return {
     id: u.id, name: u.name, email: u.email, mobile: u.mobile, username: u.username, createdAt: u.created_at,
     isAdmin: isAdminUser(u), adminVia: adminVia(u),
-    paidEnrollments: paid.n, paidTotalInr: paid.total / 100, attempts: att.n
+    paidEnrollments: paid.n, paidTotalInr: paid.total / 100, attempts: att.n,
+    lastSeenAt: u.last_seen_at || null,
+    activeNow: !!u.last_seen_at && Date.parse(u.last_seen_at.replace(' ', 'T') + 'Z') >= Date.now() - ACTIVE_WINDOW_MINUTES * 60000
   };
 }
 function loadUser(req, res){
@@ -503,7 +505,7 @@ router.post('/users/:id/password', (req, res) => {
 router.post('/users/:id/signout', (req, res) => {
   const u = loadUser(req, res); if(!u) return;
   if(isSelf(req, u)) return fail(res, 400, 'This would sign you out too. Use "Sign out" on the main site instead.');
-  db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(u.id);
+  db.prepare('UPDATE users SET token_version = token_version + 1, last_seen_at = NULL WHERE id = ?').run(u.id);
   audit(req, 'user.signout', '@' + u.username);
   res.json({ ok: true });
 });
@@ -623,6 +625,7 @@ router.get('/overview', (req, res) => {
   res.json({
     counts: {
       users: one('SELECT COUNT(*) AS n FROM users').n,
+      activeUsers: countActiveUsers(),
       examsLive: one('SELECT COUNT(*) AS n FROM exams WHERE active = 1').n,
       examsHidden: one('SELECT COUNT(*) AS n FROM exams WHERE active = 0').n,
       questions: one('SELECT COUNT(*) AS n FROM questions WHERE active = 1').n,
@@ -631,6 +634,7 @@ router.get('/overview', (req, res) => {
       revenueInr: paid.total / 100,
       reviewsPending: one("SELECT COUNT(*) AS n FROM reviews WHERE status = 'pending'").n
     },
+    activeWindowMinutes: ACTIVE_WINDOW_MINUTES,
     recentActivity: db.prepare('SELECT username, action, detail, created_at FROM admin_audit ORDER BY id DESC LIMIT 20').all()
   });
 });
