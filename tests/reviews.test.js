@@ -4,11 +4,16 @@ const assert = require('node:assert/strict');
 const { startServer, validUser } = require('./helpers');
 
 let srv, admin;
-async function signUp(over){
+// Signs up and logs in. Unless `noAttempt` is set, also records a finished practice set,
+// because only people who have completed an exam can leave a review.
+async function signUp(over, noAttempt){
   const u = validUser(over);
   await srv.api('/auth/register', { method: 'POST', body: u });
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
   const v = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } });
+  if(!noAttempt){
+    srv.sql("INSERT INTO attempts (user_id, exam_id, finished_at, correct_count, total_count, score_pct, passed) SELECT id, (SELECT MIN(id) FROM exams), datetime('now'), 25, 30, 83.3, 1 FROM users WHERE username = ?", u.username);
+  }
   return v.data.token;
 }
 test.before(async () => {
@@ -71,6 +76,21 @@ test('reviews: editing replaces the review and sends it back for approval', asyn
   assert.equal(mine.data.review.comment, 'Second version of review');
   assert.equal((await srv.api('/reviews/mine', { method: 'DELETE', token: t })).data.deleted, true);
   assert.equal((await srv.api('/reviews/mine', { token: t })).data.review, null);
+});
+
+test('reviews: only people who finished a practice set can review', async () => {
+  const t = await signUp({}, true);
+  const mine = await srv.api('/reviews/mine', { token: t });
+  assert.equal(mine.data.canReview, false);
+  const r = await srv.api('/reviews/mine', { method: 'PUT', token: t, body: { rating: 5, comment: 'Trying to rate without an exam' } });
+  assert.equal(r.status, 403);
+});
+
+test('reviews: home page data has the exam badge and star breakdown', async () => {
+  const top = await srv.api('/reviews/top');
+  assert.ok(top.data.reviews[0].exam, 'exam name included');
+  const b = top.data.summary.breakdown;
+  assert.equal(b[5] + b[4] + b[3] + b[2] + b[1], top.data.summary.count);
 });
 
 test('reviews: admin routes need an admin', async () => {

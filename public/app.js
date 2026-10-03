@@ -256,16 +256,71 @@ function reviewDate(s){
   const d = new Date(String(s || '').replace(' ', 'T') + 'Z');
   return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { month:'short', year:'numeric' });
 }
-function reviewCard(r){
+function reviewCard(r, featured){
   const initial = (r.name || '?').trim().charAt(0).toUpperCase();
-  return el('figure',{class:'review-card'},[
-    starRow(r.rating),
+  return el('figure',{class:'review-card' + (featured ? ' featured' : '')},[
+    el('div',{class:'review-top'},[
+      starRow(r.rating),
+      r.exam ? el('span',{class:'verified-tag'},[icon(ICON_CHECK, 13), 'Verified learner']) : null
+    ]),
     el('blockquote',{class:'review-text'},[r.comment]),
     el('figcaption',{class:'review-by'},[
       el('span',{class:'avatar review-avatar', 'aria-hidden':'true'},[initial]),
-      el('span',{},[ el('strong',{},[r.name]), el('span',{class:'review-date'},[reviewDate(r.date)]) ])
+      el('span',{class:'review-who'},[
+        el('strong',{},[r.name]),
+        el('span',{class:'review-meta'},[ r.exam ? 'Practised ' + r.exam : '', r.exam && reviewDate(r.date) ? ' · ' : '', reviewDate(r.date) ])
+      ])
     ])
   ]);
+}
+
+// Home page "What learners say" section. Only real, approved reviews are shown; reviewers are
+// people who finished at least one practice set, so each one gets a "Verified learner" tag.
+function renderLandingReviews(){
+  const tr = state.topReviews || { reviews: [], summary: { count: 0, average: null, breakdown: {} } };
+  const sum = tr.summary || { count: 0 };
+  const sec = el('section',{class:'landing-section', id:'reviews'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['Reviews']),
+      el('h2',{class:'section-title'},['What learners say about CertBench']),
+      el('p',{class:'section-sub'},['Ratings come only from people who finished a practice set, and every review is checked before it appears here.'])
+    ])
+  ]);
+
+  if(!tr.reviews.length){
+    sec.appendChild(el('div',{class:'reviews-empty'},[
+      el('div',{class:'reviews-empty-stars', 'aria-hidden':'true'},['★★★★★']),
+      el('h3',{},['Be among the first to rate CertBench']),
+      el('p',{},['Finish any practice set and you can rate us from your results page. The best reviews will be featured right here.']),
+      authLink('register','btn btn-primary',['Start practising free', icon(ICON_ARROW, 16)])
+    ]));
+    return sec;
+  }
+
+  // Summary panel: average, stars and a 5-to-1 breakdown.
+  const b = sum.breakdown || {};
+  const panel = el('aside',{class:'rating-panel', 'aria-label':'Rating summary'},[
+    el('div',{class:'rating-big'},[ (sum.average || 0).toFixed(1), el('span',{},['/5']) ]),
+    starRow(sum.average, 'stars-lg'),
+    el('p',{class:'rating-count'},['From ' + plural(sum.count, 'verified rating')]),
+    el('div',{class:'rating-bars'}, [5,4,3,2,1].map(n => {
+      const c = b[n] || 0, pct = sum.count ? Math.round(c / sum.count * 100) : 0;
+      return el('div',{class:'rating-bar-row', 'aria-label': n + ' stars: ' + c},[
+        el('span',{class:'rating-bar-label'},[n + '★']),
+        el('span',{class:'rating-bar'},[ el('i',{style:'width:' + pct + '%'}) ]),
+        el('span',{class:'rating-bar-count'},[String(c)])
+      ]);
+    }))
+  ]);
+
+  const grid = el('div',{class:'review-grid' + (tr.reviews.length === 1 ? ' single' : '')}, tr.reviews.map((r, i) => reviewCard(r, i === 0)));
+  sec.appendChild(el('div',{class:'reviews-layout'},[ panel, grid ]));
+  sec.appendChild(el('p',{class:'review-cta'},[
+    'Finished a practice set? ',
+    authLink('login','review-cta-link',['Sign in']),
+    ' and rate CertBench from your results page.'
+  ]));
+  return sec;
 }
 
 // ---- Landing page navigation helpers ----
@@ -785,30 +840,7 @@ function renderLanding(){
   ]));
 
   // ---- ratings & reviews (top 5 approved 4-5 star reviews, moderated in the admin panel) ----
-  const tr = state.topReviews || { reviews: [], summary: { count: 0, average: null } };
-  const reviewsHead = el('div',{class:'section-head'},[
-    el('span',{class:'eyebrow'},['Reviews']),
-    el('h2',{class:'section-title'},['What learners say about CertBench'])
-  ]);
-  if(tr.summary && tr.summary.count){
-    reviewsHead.appendChild(el('div',{class:'rating-summary'},[
-      starRow(tr.summary.average, 'stars-lg'),
-      el('span',{},[ el('strong',{},[tr.summary.average.toFixed(1)]), ' out of 5 · ' + plural(tr.summary.count, 'rating') ])
-    ]));
-  }
-  wrap.appendChild(el('section',{class:'landing-section', id:'reviews'},[
-    reviewsHead,
-    tr.reviews.length
-      ? el('div',{class:'review-grid'}, tr.reviews.map(reviewCard))
-      : el('div',{class:'review-empty'},[
-          el('p',{},['No reviews yet. Tried a practice set? Be the first to rate CertBench.'])
-        ]),
-    el('p',{class:'review-cta'},[
-      'Practised on CertBench? ',
-      authLink('login','review-cta-link',['Sign in to rate us']),
-      ' — your review appears here once it is approved.'
-    ])
-  ]));
+  wrap.appendChild(renderLandingReviews());
 
   // ---- about + contact us (both edited in the admin panel under Site settings) ----
   const ci = contactInfo();
@@ -1623,7 +1655,6 @@ function renderSelect(){
   }
 
   renderExamGrid();
-  wrap.appendChild(renderMyReview());
   return wrap;
 }
 
@@ -1632,13 +1663,14 @@ function renderMyReview(){
   const box = el('section',{class:'my-review', id:'my-review', 'aria-labelledby':'my-review-title'});
   function fill(){
     box.innerHTML = '';
+    if(!state.canReview && !state.myReview){ box.remove(); return; }
     const mine = state.myReview;
     let editing = !mine;
     let picked = mine ? mine.rating : 0;
 
     box.appendChild(el('div',{class:'my-review-head'},[
-      el('h2',{id:'my-review-title'},[mine ? 'Your review of CertBench' : 'Enjoying CertBench? Rate us']),
-      el('p',{},['Good reviews (4 or 5 stars) can be featured on the CertBench home page after an admin approves them. Only your first name and last initial are shown.'])
+      el('h2',{id:'my-review-title'},[mine ? 'Your review of CertBench' : 'How was your practice? Rate CertBench']),
+      el('p',{},[mine ? 'Thanks for rating us. You can update your review at any time.' : 'Your rating helps other learners choose. Approved 4 and 5 star reviews can appear on the CertBench home page, showing only your first name and last initial.'])
     ]));
     const body = el('div',{});
     box.appendChild(body);
@@ -1722,7 +1754,7 @@ function renderMyReview(){
   }
   if(state.myReview === undefined){
     box.appendChild(el('p',{class:'my-review-loading'},['Loading your review…']));
-    api('/reviews/mine').then(d => { state.myReview = d.review; fill(); }).catch(() => { box.remove(); });
+    api('/reviews/mine').then(d => { state.myReview = d.review; state.canReview = !!d.canReview; fill(); }).catch(() => { box.remove(); });
   } else fill();
   return box;
 }
@@ -2115,6 +2147,7 @@ async function submitExam(){
   try{
     const data = await api(`/exams/attempts/${state.attemptId}/submit`, { method:'POST', body:{ answers: state.answers } });
     state.results = data;
+    state.myReview = undefined;   // re-check: finishing a set is what unlocks rating
     state.screen = 'results';
     render();
   }catch(err){
@@ -2159,6 +2192,7 @@ function renderResults(){
     ])
   ]);
   wrap.appendChild(el('div',{class:'score-panel ' + (pass ? 'is-pass' : 'is-fail')},[ring, info]));
+  wrap.appendChild(renderMyReview());
 
   wrap.appendChild(el('div',{class:'review-head'},[ el('h3',{},['Answer breakdown']) ]));
   r.detail.forEach((d,i)=>{
@@ -2199,7 +2233,7 @@ function signOut(){
     setsExamSlug:null, setsExamMeta:null, availableSets:[],
     attemptId:null, examMeta:null, examSetNumber:null, questions:[], current:0, answers:{},
     visitedIds:{}, skippedIds:{},
-    results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined,
+    results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined, canReview:false,
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
     loginError:'', loginNotice:'', otpError:'', registerError:'', regDraft:null
   });
