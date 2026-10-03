@@ -10,7 +10,7 @@ const router = express.Router();
 // providers — restricting registration to only @gmail.com/@yahoo.com would
 // lock out perfectly valid users on Outlook, work email domains, etc; this
 // instead verifies the address is *shaped* like a real email address).
-const { checkName, checkEmail, checkMobile, checkPassword, checkUsername } = require('../validation');
+const { checkName, checkEmail, checkMobile, checkPassword, checkUsername, clean } = require('../validation');
 
 function maskEmail(email){
   const [name, domain] = String(email).split('@');
@@ -31,25 +31,34 @@ function publicUser(u){
 router.post('/register', (req, res) => {
   const { name, email, mobile, username, password } = req.body || {};
 
-  if(!name || !email || !mobile || !username || !password){
-    return res.status(400).json({ error: 'All fields are required.' });
+  // Check every field (not just the first bad one) so the form can highlight all problems at once.
+  const fields = {};
+  const nameErr = checkName(name); if(nameErr) fields.name = nameErr;
+  const emailErr = checkEmail(email); if(emailErr) fields.email = emailErr;
+  const mobileErr = checkMobile(mobile); if(mobileErr) fields.mobile = mobileErr;
+  const userErr = checkUsername(username); if(userErr) fields.username = userErr;
+  const pwErr = checkPassword(password, typeof username === 'string' ? username : ''); if(pwErr) fields.password = pwErr;
+  const order = ['name', 'email', 'mobile', 'username', 'password'];
+  const firstBad = order.find(k => fields[k]);
+  if(firstBad){
+    return res.status(400).json({ error: fields[firstBad], fields });
   }
-  const problem = checkName(name) || checkEmail(email) || checkMobile(mobile) || checkPassword(password) || checkUsername(username);
-  if(problem){
-    return res.status(400).json({ error: problem });
-  }
-  const trimmedName = String(name).trim();
-  const trimmedEmail = String(email).trim();
-  const digits = String(mobile).replace(/\D/g, '');
-  const uname = String(username).trim().toLowerCase();
+  const trimmedName = clean.name(name);
+  const trimmedEmail = clean.email(email);
+  const digits = clean.mobile(mobile);
+  const uname = clean.username(username);
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(uname);
   if(existing){
-    return res.status(409).json({ error: 'That username is already taken.' });
+    return res.status(409).json({ error: 'That username is already taken.', fields: { username: 'That username is already taken.' } });
   }
-  const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(trimmedEmail.toLowerCase());
+  const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(trimmedEmail);
   if(existingEmail){
-    return res.status(409).json({ error: 'An account with that email already exists.' });
+    return res.status(409).json({ error: 'An account with that email already exists.', fields: { email: 'An account with that email already exists.' } });
+  }
+  const existingMobile = db.prepare('SELECT id FROM users WHERE mobile = ?').get(digits);
+  if(existingMobile){
+    return res.status(409).json({ error: 'An account with that mobile number already exists.', fields: { mobile: 'An account with that mobile number already exists.' } });
   }
 
   const passwordHash = bcrypt.hashSync(password, 10);
@@ -58,7 +67,7 @@ router.post('/register', (req, res) => {
     info = db.prepare(`
       INSERT INTO users (name, email, mobile, username, password_hash)
       VALUES (?, ?, ?, ?, ?)
-    `).run(trimmedName, trimmedEmail.toLowerCase(), digits, uname, passwordHash);
+    `).run(trimmedName, trimmedEmail, digits, uname, passwordHash);
   }catch(err){
     return res.status(409).json({ error: 'That username or email is already registered.' });
   }
@@ -70,7 +79,7 @@ router.post('/register', (req, res) => {
 // ---- POST /api/auth/login  (step 1: password check, issues OTP) ----
 router.post('/login', async (req, res) => {
   const { username, password } = req.body || {};
-  if(!username || !password){
+  if(typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password){
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
@@ -135,7 +144,7 @@ router.post('/verify-otp', (req, res) => {
   }
   if(!code || !bcrypt.compareSync(String(code), otpRow.code_hash)){
     db.prepare('UPDATE otps SET attempts = attempts + 1 WHERE id = ?').run(otpRow.id);
-    return res.status(400).json({ error: 'That code doesn\u2019t match. Please try again.' });
+    return res.status(400).json({ error: 'That code doesn’t match. Please try again.' });
   }
 
   db.prepare('UPDATE otps SET consumed = 1 WHERE id = ?').run(otpRow.id);
@@ -147,7 +156,7 @@ router.post('/verify-otp', (req, res) => {
 // ---- POST /api/auth/forgot-password  (step 1: send a reset code by email) ----
 router.post('/forgot-password', async (req, res) => {
   const { email } = req.body || {};
-  if(!email) return res.status(400).json({ error: 'Enter your email address.' });
+  if(typeof email !== 'string' || !email.trim()) return res.status(400).json({ error: 'Enter your email address.' });
 
   const trimmedEmail = String(email).trim().toLowerCase();
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(trimmedEmail);
@@ -190,11 +199,10 @@ router.post('/reset-password', (req, res) => {
     return res.status(401).json({ error: 'Your reset session expired. Please request a new code.' });
   }
 
-  if(!newPassword || String(newPassword).length < 6){
-    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-  }
-  if(!/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)){
-    return res.status(400).json({ error: 'Password must include at least one letter and one number.' });
+  const resetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(payload.sub);
+  const pwProblem = checkPassword(newPassword, resetUser ? resetUser.username : '');
+  if(pwProblem){
+    return res.status(400).json({ error: pwProblem });
   }
 
   const otpRow = db.prepare(`
@@ -213,7 +221,7 @@ router.post('/reset-password', (req, res) => {
   }
   if(!code || !bcrypt.compareSync(String(code), otpRow.code_hash)){
     db.prepare('UPDATE otps SET attempts = attempts + 1 WHERE id = ?').run(otpRow.id);
-    return res.status(400).json({ error: 'That code doesn\u2019t match. Please try again.' });
+    return res.status(400).json({ error: 'That code doesn’t match. Please try again.' });
   }
 
   db.prepare('UPDATE otps SET consumed = 1 WHERE id = ?').run(otpRow.id);
