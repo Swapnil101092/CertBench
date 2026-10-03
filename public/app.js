@@ -8,7 +8,7 @@ let state = {
   forgotError: '', forgotNotice: '', resetToken: null, resetEmail: '', resetError: '', resetOtp: null,
   token: null, currentUser: null,
   pendingToken: null, emailMasked: '', otpExpiresAt: null, otpResendAt: null,
-  exams: [], examSearch: '', landingExams: null, siteSettings: null,
+  exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null,
   enrollBusySlug: null,
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
   examMeta: null, examSetNumber: null, attemptId: null, questions: [], current: 0, answers: {},
@@ -283,6 +283,9 @@ function landingFacts(){
   const list = landingExamList();
   const src = state.landingExams && state.landingExams.length ? state.landingExams : null;
   const f = { n: list.length, names: list.map(x => x.short), setCount: 5, perSet: 30, samePerSet: true, passPct: 70, samePass: true };
+  f.jee = list.filter(isJee).length;
+  f.it = f.n - f.jee;
+  f.catLabels = categoriesIn(list, x => x.label).map(c => c.label);
   if(src){
     f.setCount = Math.max.apply(null, src.map(x => x.set_count || 0)) || 5;
     const per = Array.from(new Set(src.map(x => x.question_count)));
@@ -298,17 +301,22 @@ function promoMessage(){
   if(p && p.text) return p.text;
   const f = landingFacts();
   if(!f.n) return null;
-  return '🎓 ' + plural(f.n, 'certification') + ' ready to practice — ' + joinNames(f.names);
+  return '🎓 ' + plural(f.n, 'exam') + ' ready to practice — ' + joinNames(f.catLabels);
 }
 function heroSubText(){
   const f = landingFacts();
   const tail = 'results graded the moment you finish — so you know exactly where you stand before the exam that actually counts.';
   if(!f.n) return 'Timed mock exams with ' + tail;
-  return 'Timed mock exams for ' + plural(f.n, 'IT certification') + ', ' + f.setCount + ' fresh practice sets each, and ' + tail;
+  const what = f.jee && f.it ? plural(f.it, 'IT certification') + ' plus free JEE Main practice'
+             : f.jee ? 'JEE Main practice' : plural(f.it, 'IT certification');
+  return 'Timed mock exams for ' + what + ', ' + f.setCount + ' fresh practice sets each, and ' + tail;
 }
 function howStepTexts(){
   const f = landingFacts();
-  const one = f.n ? 'Choose from ' + plural(f.n, 'IT track') + ': ' + joinNames(f.names) + '.' : 'Choose the certification you are preparing for.';
+  const itCats = f.catLabels.filter(c => c !== 'JEE Main');
+  const one = !f.n ? 'Choose the certification you are preparing for.'
+    : (f.it ? 'Choose from ' + plural(f.it, 'IT certification') + ' across ' + joinNames(itCats) : 'Choose your subject')
+      + (f.jee && f.it ? ', or practise for JEE Main for free.' : '.');
   const qTxt = f.samePerSet && f.perSet ? ' of ' + f.perSet + ' questions' : '';
   const passTxt = f.samePass ? ' with ' + f.passPct + '% or more' : ' (the pass mark is shown on each exam)';
   const two = 'Every exam has ' + f.setCount + ' practice sets' + qTxt + ' with a countdown timer. Pass a set' + passTxt + ' to unlock the next one.';
@@ -341,6 +349,69 @@ function landingExamList(){
     });
   }
   return LANDING_EXAMS.map(x => ({ label:x.label, short:x.short, name:x.name, color:x.color, price:null, desc:'' }));
+}
+
+// ---- Exam categories: keep a long catalogue easy to scan ----
+// Matched first on the exam's short label, then on keywords in its name, so a new exam added in
+// the admin panel lands in a sensible group without any code change (anything unmatched goes to "More").
+const EXAM_CATEGORIES = [
+  { id:'cloud',      label:'Cloud',               labels:['AZ','AWS','GCP','SAA'] },
+  { id:'devops',     label:'DevOps & Containers', labels:['K8S','DEV'] },
+  { id:'testing',    label:'Testing & QA',        labels:['QA','CTFL'] },
+  { id:'security',   label:'Security',            labels:['SEC+'] },
+  { id:'management', label:'IT Management',       labels:['ITIL','PMP'] },
+  { id:'jee',        label:'JEE Main',            labels:['PHY','CHEM','MATH'] },
+  { id:'other',      label:'More',                labels:[] }
+];
+const CATEGORY_KEYWORDS = [
+  ['jee', /\bjee\b|\bneet\b/i],
+  ['security', /security|cissp|\bceh\b|cyber/i],
+  ['management', /\bitil\b|\bpmp\b|project management|scrum|prince2/i],
+  ['testing', /testing|\bqa\b|istqb|selenium|tosca/i],
+  ['devops', /devops|kubernetes|docker|container|ci\/cd|terraform/i],
+  ['cloud', /azure|\baws\b|google cloud|\bgcp\b|cloud/i]
+];
+function examCategoryId(label, name){
+  const L = String(label || '').toUpperCase();
+  const byLabel = EXAM_CATEGORIES.find(c => c.labels.includes(L));
+  if(byLabel) return byLabel.id;
+  const hit = CATEGORY_KEYWORDS.find(([, re]) => re.test(name || ''));
+  return hit ? hit[0] : 'other';
+}
+function categoryLabel(id){ const c = EXAM_CATEGORIES.find(x => x.id === id); return c ? c.label : 'More'; }
+function isJee(x){ return examCategoryId(x.label || x.short_label, x.name) === 'jee'; }
+// Categories that actually have exams, in display order, with counts.
+function categoriesIn(list, getLabel){
+  return EXAM_CATEGORIES.map(c => ({ id:c.id, label:c.label,
+    count: list.filter(x => examCategoryId(getLabel(x), x.name) === c.id).length })).filter(c => c.count > 0);
+}
+// A row of filter chips. `extra` adds a "Free" toggle chip when given.
+function categoryChips(cats, total, active, onPick, extra){
+  const row = el('div',{class:'cat-chips', role:'tablist', 'aria-label':'Filter exams by category'});
+  function chip(id, text, count){
+    const on = active === id;
+    const b = el('button',{class:'cat-chip' + (on ? ' on' : ''), type:'button', role:'tab', 'aria-selected': on ? 'true' : 'false'},[
+      text, count !== undefined ? el('span',{class:'cat-count'},[String(count)]) : null
+    ]);
+    b.addEventListener('click', ()=> onPick(id));
+    return b;
+  }
+  row.appendChild(chip('all', 'All', total));
+  cats.forEach(c => row.appendChild(chip(c.id, c.label, c.count)));
+  if(extra && extra.freeCount) row.appendChild(chip('free', 'Free', extra.freeCount));
+  return row;
+}
+// One shared sentence for the details every exam has in common, so the cards don't repeat it.
+function commonExamFacts(list){
+  const uniq = (k) => Array.from(new Set(list.map(x => x[k]).filter(v => v !== undefined && v !== null)));
+  const sets = uniq('sets'), per = uniq('perSet'), mins = uniq('minutes'), pass = uniq('pass');
+  const parts = [];
+  if(sets.length === 1) parts.push(sets[0] + ' practice sets');
+  if(per.length === 1) parts.push(per[0] + ' questions per set');
+  if(mins.length === 1) parts.push(mins[0] + ' minutes per set');
+  if(pass.length === 1) parts.push(pass[0] + '% to pass');
+  return { text: parts.length ? 'Every exam: ' + parts.join(' · ') + '.' : '', pass: pass.length === 1 ? pass[0] : null,
+           minutes: mins.length === 1 ? mins[0] : null };
 }
 
 // ---- Moving visuals: certification badges (our own badges, not the vendors' trademarked logos) ----
@@ -451,12 +522,16 @@ function renderLanding(){
   ]);
   const ddMenu = el('div',{class:'nav-dropdown-menu'});
   ddMenu.appendChild(el('div',{class:'nav-dd-title'},['Practice exams']));
-  navExams.forEach(x=>{
-    ddMenu.appendChild(authLink('register','nav-dd-item',[
-      examBadge(x),
-      el('span',{class:'nav-dd-name'},[x.name]),
-      el('span',{class:'nav-dd-price'},[priceLabel(x.price)])
-    ]));
+  const ddCats = categoriesIn(navExams, x => x.label);
+  ddCats.forEach(c=>{
+    if(ddCats.length > 1) ddMenu.appendChild(el('div',{class:'nav-dd-group'},[c.label]));
+    navExams.filter(x => examCategoryId(x.label, x.name) === c.id).forEach(x=>{
+      ddMenu.appendChild(authLink('register','nav-dd-item',[
+        examBadge(x),
+        el('span',{class:'nav-dd-name'},[x.name]),
+        el('span',{class:'nav-dd-price'},[priceLabel(x.price)])
+      ]));
+    });
   });
   if(!navExams.length) ddMenu.appendChild(el('div',{class:'nav-dd-foot'},['No certificates are available yet.']));
   ddMenu.appendChild(el('div',{class:'nav-dd-foot'},['Create a free account to get started']));
@@ -525,26 +600,20 @@ function renderLanding(){
   // ---- stats strip: every number comes from the live exam data ----
   function stat(v, label){ return el('div',{class:'stat'},[ el('b',{},[String(v)]), el('span',{},[label]) ]); }
   wrap.appendChild(el('section',{class:'stats-strip'},[
-    stat(facts.n || '—', facts.n === 1 ? 'Certification' : 'Certifications'),
+    stat(facts.n || '—', facts.n === 1 ? 'Exam' : 'Exams'),
     stat(facts.setCount, 'Practice sets each'),
     facts.samePerSet && facts.perSet ? stat(facts.perSet, 'Questions per set') : stat('Timed', 'Like the real exam'),
     facts.samePass ? stat(facts.passPct + '%', 'Pass mark') : stat('Instant', 'Results')
   ]));
 
   // ---- exams: real exams, real prices ----
-  const examsSec = el('section',{class:'landing-section', id:'exams'},[
-    el('div',{class:'section-head'},[
-      el('span',{class:'eyebrow'},['Certifications']),
-      el('h2',{class:'section-title'},['Pick the exam you’re preparing for']),
-      el('p',{class:'section-sub'},['Each track has its own question bank, split into practice sets you unlock one after another.'])
-    ])
-  ]);
-  const examGrid = el('div',{class:'exam-grid'});
-  navExams.forEach(x=>{
-    const meta = [];
-    if(x.perSet) meta.push(x.perSet + ' Qs / set');
-    if(x.minutes) meta.push(x.minutes + ' min');
-    if(x.pass) meta.push(x.pass + '% to pass');
+  // IT certifications get category tabs, a search box and a short "featured" list; JEE has its own section.
+  const itExams = navExams.filter(x => !isJee(x));
+  const jeeExams = navExams.filter(isJee);
+  const FEATURED = 6;
+
+  function landingCard(x, commonPass){
+    const showPass = x.pass && x.pass !== commonPass;
     const card = authLink('register','exam-card',[
       el('div',{class:'exam-card-top'},[
         el('span',{class:'exam-card-badge', style:`--c:${safeColor(x.color)}`},[x.label]),
@@ -552,15 +621,96 @@ function renderLanding(){
       ]),
       el('h3',{},[x.name]),
       x.desc ? el('p',{},[x.desc]) : null,
-      meta.length ? el('div',{class:'exam-card-meta'}, meta.map(t => el('span',{},[t]))) : null,
+      showPass ? el('div',{class:'exam-card-meta'},[ el('span',{},[x.pass + '% to pass']) ]) : null,
       el('span',{class:'exam-card-cta'},['Start practicing', icon(ICON_ARROW, 16)])
     ]);
     card.style.setProperty('--c', safeColor(x.color));
-    examGrid.appendChild(card);
-  });
-  if(!navExams.length) examGrid.appendChild(el('p',{class:'no-results'},['New exams are coming soon.']));
+    return card;
+  }
+
+  const itFacts = commonExamFacts(itExams);
+  const examsSec = el('section',{class:'landing-section', id:'exams'},[
+    el('div',{class:'section-head'},[
+      el('span',{class:'eyebrow'},['Certifications']),
+      el('h2',{class:'section-title'},['Pick the exam you’re preparing for']),
+      el('p',{class:'section-sub'},['Each track has its own question bank, split into practice sets you unlock one after another. ' + itFacts.text])
+    ])
+  ]);
+
+  const itCats = categoriesIn(itExams, x => x.label);
+  const freeCount = itExams.filter(x => x.price === 0).length;
+  const toolbar = el('div',{class:'exam-toolbar'});
+  const chipsHolder = el('div',{});
+  const landingSearch = el('div',{class:'search-wrap exam-search'},[ el('span',{class:'search-icon'},[icon(ICON_SEARCH, 18)]) ]);
+  const landingInput = el('input',{ type:'search', class:'search-input', placeholder:'Search exams, e.g. AWS, ISTQB, PMP…',
+    'aria-label':'Search exams', value: state.landingQuery || '' });
+  landingSearch.appendChild(landingInput);
+  toolbar.appendChild(chipsHolder);
+  toolbar.appendChild(landingSearch);
+  if(itExams.length > FEATURED) examsSec.appendChild(toolbar);
+
+  const examGrid = el('div',{class:'exam-grid'});
+  const moreHolder = el('div',{class:'exam-more'});
   examsSec.appendChild(examGrid);
+  examsSec.appendChild(moreHolder);
+
+  function drawLandingExams(){
+    chipsHolder.innerHTML = '';
+    chipsHolder.appendChild(categoryChips(itCats, itExams.length, state.landingCat, (id)=>{
+      state.landingCat = id; state.landingShowAll = false; drawLandingExams();
+    }, { freeCount }));
+
+    const q = (state.landingQuery || '').trim().toLowerCase();
+    let list = itExams;
+    if(state.landingCat === 'free') list = list.filter(x => x.price === 0);
+    else if(state.landingCat !== 'all') list = list.filter(x => examCategoryId(x.label, x.name) === state.landingCat);
+    if(q) list = list.filter(x => (x.name + ' ' + x.label + ' ' + x.desc + ' ' + categoryLabel(examCategoryId(x.label, x.name))).toLowerCase().includes(q));
+
+    const browsing = state.landingCat === 'all' && !q;
+    const shown = browsing && !state.landingShowAll ? list.slice(0, FEATURED) : list;
+
+    examGrid.innerHTML = '';
+    shown.forEach(x => examGrid.appendChild(landingCard(x, itFacts.pass)));
+    if(!itExams.length) examGrid.appendChild(el('p',{class:'no-results'},['New exams are coming soon.']));
+    else if(!list.length) examGrid.appendChild(el('p',{class:'no-results'},[q ? `No exams match "${state.landingQuery}".` : 'No exams in this category yet.']));
+
+    moreHolder.innerHTML = '';
+    if(browsing && list.length > FEATURED){
+      const btn = el('button',{class:'btn btn-ghost exam-more-btn', type:'button'},[
+        state.landingShowAll ? 'Show fewer' : 'View all ' + list.length + ' certifications'
+      ]);
+      btn.addEventListener('click', ()=>{
+        const wasAll = state.landingShowAll;
+        state.landingShowAll = !wasAll; drawLandingExams();
+        if(wasAll) scrollToId('exams');
+      });
+      moreHolder.appendChild(btn);
+    }
+  }
+  landingInput.addEventListener('input', function(){
+    state.landingQuery = this.value;
+    if(this.value.trim()) state.landingCat = 'all';   // search across every category
+    drawLandingExams();
+  });
+  drawLandingExams();
   wrap.appendChild(examsSec);
+
+  // ---- JEE Main: a different audience, so it gets its own short section ----
+  if(jeeExams.length){
+    const jeeFacts = commonExamFacts(jeeExams);
+    const allFree = jeeExams.every(x => x.price === 0);
+    const jeeSec = el('section',{class:'landing-section', id:'jee'},[
+      el('div',{class:'section-head'},[
+        el('span',{class:'eyebrow'},['JEE Main']),
+        el('h2',{class:'section-title'},[allFree ? 'Free JEE Main practice' : 'JEE Main practice']),
+        el('p',{class:'section-sub'},['Original JEE Main-style questions, subject by subject, weighted to the chapters asked most often. ' + jeeFacts.text])
+      ])
+    ]);
+    const jeeGrid = el('div',{class:'exam-grid'});
+    jeeExams.forEach(x => jeeGrid.appendChild(landingCard(x, jeeFacts.pass)));
+    jeeSec.appendChild(jeeGrid);
+    wrap.appendChild(jeeSec);
+  }
 
   // ---- features bento: every statement here is true of the actual app ----
   function feature(ic, title, text, cls){
@@ -675,7 +825,7 @@ function renderAuthVisual(){
   panel.appendChild(el('div',{class:'auth-visual-glow', 'aria-hidden':'true'}));
   panel.appendChild(el('div',{class:'auth-visual-tagline'},['Practice mock exams. ', el('span',{},['Walk in ready.'])]));
   panel.appendChild(el('div',{class:'auth-visual-features'},[
-    landingFacts().n ? el('div',{},[plural(landingFacts().n, 'IT certification') + ' to practice']) : null,
+    landingFacts().n ? el('div',{},[plural(landingFacts().n, 'exam') + ' to practice']) : null,
     el('div',{},[landingFacts().setCount + ' fresh practice sets per exam']),
     el('div',{},['Timed, server-graded results'])
   ]));
@@ -1350,23 +1500,34 @@ function renderSelect(){
   });
   searchInput.addEventListener('input', function(){
     state.examSearch = this.value;
+    if(this.value.trim()) state.examCat = 'all';   // search across every category
     renderExamGrid();
   });
   searchWrap.appendChild(searchInput);
   wrap.appendChild(searchWrap);
 
+  const selCats = categoriesIn(state.exams, b => b.short_label);
+  const chipsHolder = el('div',{});
+  if(selCats.length > 1) wrap.appendChild(chipsHolder);
   const gridHolder = el('div',{});
   wrap.appendChild(gridHolder);
 
   function renderExamGrid(){
     gridHolder.innerHTML = '';
+    chipsHolder.innerHTML = '';
+    if(!selCats.some(c => c.id === state.examCat) && state.examCat !== 'free') state.examCat = 'all';
+    chipsHolder.appendChild(categoryChips(selCats, state.exams.length, state.examCat, (id)=>{ state.examCat = id; renderExamGrid(); },
+      { freeCount: state.exams.filter(b => !(b.price_inr_paise > 0)).length }));
     const q = (state.examSearch || '').trim().toLowerCase();
-    const filtered = !q ? state.exams : state.exams.filter(bank =>
+    let filtered = state.exams;
+    if(state.examCat === 'free') filtered = filtered.filter(b => !(b.price_inr_paise > 0));
+    else if(state.examCat !== 'all') filtered = filtered.filter(b => examCategoryId(b.short_label, b.name) === state.examCat);
+    if(q) filtered = filtered.filter(bank =>
       bank.name.toLowerCase().includes(q) || bank.description.toLowerCase().includes(q) || bank.short_label.toLowerCase().includes(q)
     );
 
     if(!filtered.length){
-      gridHolder.appendChild(el('p',{class:'no-results'},[`No exams match "${state.examSearch}".`]));
+      gridHolder.appendChild(el('p',{class:'no-results'},[q ? `No exams match "${state.examSearch}".` : 'No exams in this category yet.']));
       return;
     }
 
@@ -1886,7 +2047,7 @@ function signOut(){
     setsExamSlug:null, setsExamMeta:null, availableSets:[],
     attemptId:null, examMeta:null, examSetNumber:null, questions:[], current:0, answers:{},
     visitedIds:{}, skippedIds:{},
-    results:null, myAttempts:[], examSearch:'',
+    results:null, myAttempts:[], examSearch:'', examCat:'all',
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
     loginError:'', loginNotice:'', otpError:'', registerError:'', regDraft:null
   });
