@@ -6,6 +6,7 @@ const V = require('../validation');
 const { parseCsv, toQuestionRows } = require('../csv');
 const settings = require('../settings');
 const reviews = require('../reviews');
+const photos = require('../photos');
 
 const router = express.Router();
 router.use(requireAdmin);          // every route below needs a logged-in admin (checked in the database each time)
@@ -544,6 +545,48 @@ router.put('/settings', (req, res) => {
   settings.save(clean);
   audit(req, 'settings.update', Object.keys(clean).join(', '));
   res.json({ settings: settings.getForAdmin() });
+});
+
+// ---------------------------------------------------------------- About Us photos
+
+router.get('/photos', (req, res) => {
+  res.json({ photos: photos.list(), max: photos.MAX_PHOTOS });
+});
+
+router.post('/photos', (req, res) => {
+  const b = req.body || {};
+  const r = photos.add(b.image, b.caption);
+  if(r.errors) return fail(res, 400, Object.values(r.errors)[0], { fields: r.errors });
+  audit(req, 'photo.add', 'id ' + r.id);
+  res.json({ photos: photos.list(), max: photos.MAX_PHOTOS });
+});
+
+router.put('/photos/:id', (req, res) => {
+  const id = toId(req.params.id);
+  if(!id) return fail(res, 404, 'Photo not found.');
+  const r = photos.setCaption(id, (req.body || {}).caption);
+  if(r.notFound) return fail(res, 404, 'Photo not found.');
+  if(r.errors) return fail(res, 400, r.errors.caption, { fields: r.errors });
+  audit(req, 'photo.caption', 'id ' + id);
+  res.json({ photos: photos.list(), max: photos.MAX_PHOTOS });
+});
+
+router.post('/photos/:id/move', (req, res) => {
+  const id = toId(req.params.id);
+  const dir = Number((req.body || {}).dir);
+  if(!id) return fail(res, 404, 'Photo not found.');
+  if(dir !== -1 && dir !== 1) return fail(res, 400, 'dir must be -1 or 1.');
+  const r = photos.move(id, dir);
+  if(r.notFound) return fail(res, 404, 'Photo not found.');
+  res.json({ photos: photos.list(), max: photos.MAX_PHOTOS });
+});
+
+router.delete('/photos/:id', (req, res) => {
+  const id = toId(req.params.id);
+  const r = id ? photos.remove(id) : { notFound: true };
+  if(r.notFound) return fail(res, 404, 'Photo not found.');
+  audit(req, 'photo.delete', 'id ' + id);
+  res.json({ photos: photos.list(), max: photos.MAX_PHOTOS });
 });
 
 // ---------------------------------------------------------------- ratings & reviews
