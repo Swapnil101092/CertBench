@@ -12,6 +12,8 @@ const DEFAULTS = {
   promo_enabled: '1',
   promo_text: '',                    // blank = the site writes its own line from the live exam list
   about_text: DEFAULT_ABOUT,         // blank = this default
+  contact_title: 'Contact us',
+  contact_intro: 'Questions about an exam, a payment or your account? Reach out and we will get back to you.',
   contact_address: 'F 710, Ayaan Society, Wagholi, Pune',
   contact_phone: '+91 8421603458',
   contact_email: 'swapneeljain@gmail.com'
@@ -36,6 +38,8 @@ function getForAdmin(){
     promoEnabled: r.promo_enabled === '1',
     promoText: r.promo_text,
     aboutText: r.about_text,
+    contactTitle: r.contact_title,
+    contactIntro: r.contact_intro,
     contactAddress: r.contact_address,
     contactPhone: r.contact_phone,
     contactEmail: r.contact_email,
@@ -50,7 +54,7 @@ function getPublic(){
   return {
     promo: { enabled: r.promo_enabled === '1', text: r.promo_text.trim() },
     about: aboutSource.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
-    contact: { address: r.contact_address, phone: r.contact_phone, email: r.contact_email }
+    contact: { title: r.contact_title.trim() || DEFAULTS.contact_title, intro: r.contact_intro.trim(), address: r.contact_address, phone: r.contact_phone, email: r.contact_email }
   };
 }
 
@@ -76,6 +80,16 @@ function validate(input){
     else if(v.length > 2000) errors.aboutText = 'Keep the About text under 2000 characters.';
     else if(CONTROL_RE.test(v)) errors.aboutText = 'Contains characters that are not allowed.';
     else clean.about_text = v;
+  }
+  if('contactTitle' in input){
+    const v = str(input.contactTitle);
+    if(v === null || v.length > 60 || CONTROL_RE.test(v) || v.includes('\n')) errors.contactTitle = 'Use a single line under 60 characters (blank = "Contact us").';
+    else clean.contact_title = v;
+  }
+  if('contactIntro' in input){
+    const v = str(input.contactIntro);
+    if(v === null || v.length > 300 || CONTROL_RE.test(v) || v.includes('\n')) errors.contactIntro = 'Use a single line under 300 characters, or leave it blank.';
+    else clean.contact_intro = v;
   }
   if('contactAddress' in input){
     const v = str(input.contactAddress);
