@@ -45,6 +45,7 @@ async function api(path, opts){
   if(!res.ok){
     const err = new Error((data && data.error) || 'Request failed.');
     err.status = res.status;
+    if(data && data.fields) err.fields = data.fields;
     throw err;
   }
   return data;
@@ -92,7 +93,7 @@ function topbar(){
     const signOutBtn = el('button',{class:'btn-ghost btn btn-sm'},['Sign out']);
     signOutBtn.addEventListener('click', function(){
       if(state.screen === 'exam' || state.screen === 'review'){
-        const ok = window.confirm('You\u2019re in the middle of a timed exam. Signing out now will discard this attempt. Sign out anyway?');
+        const ok = window.confirm('You’re in the middle of a timed exam. Signing out now will discard this attempt. Sign out anyway?');
         if(!ok) return;
       }
       signOut();
@@ -120,7 +121,7 @@ function toggleTheme(){
 /* ============ AUTH SCREENS ============ */
 
 function renderLoading(){
-  return el('div',{class:'center-notice'},['Loading\u2026']);
+  return el('div',{class:'center-notice'},['Loading…']);
 }
 
 // ---- Auth links: open sign-in / sign-up in a NEW TAB on the website. ----
@@ -297,11 +298,11 @@ function promoMessage(){
   if(p && p.text) return p.text;
   const f = landingFacts();
   if(!f.n) return null;
-  return '\uD83C\uDF93 ' + plural(f.n, 'certification') + ' ready to practice \u2014 ' + joinNames(f.names);
+  return '🎓 ' + plural(f.n, 'certification') + ' ready to practice — ' + joinNames(f.names);
 }
 function heroSubText(){
   const f = landingFacts();
-  const tail = 'results graded the moment you finish \u2014 so you know exactly where you stand before the exam that actually counts.';
+  const tail = 'results graded the moment you finish — so you know exactly where you stand before the exam that actually counts.';
   if(!f.n) return 'Timed mock exams with ' + tail;
   return 'Timed mock exams for ' + plural(f.n, 'IT certification') + ', ' + f.setCount + ' fresh practice sets each, and ' + tail;
 }
@@ -434,7 +435,7 @@ function renderLanding(){
   const promoText = promoMessage();
   if(promoText && safeGetLS('certbench-promo-dismissed') !== hashText(promoText)){
     const promo = el('div',{class:'promo-bar'},[ el('span',{},[promoText]) ]);
-    const closeBtn = el('button',{class:'promo-close', type:'button', 'aria-label':'Dismiss'},['\u00d7']);
+    const closeBtn = el('button',{class:'promo-close', type:'button', 'aria-label':'Dismiss'},['×']);
     closeBtn.addEventListener('click', ()=>{
       safeSetLS('certbench-promo-dismissed', hashText(promoText));
       render();
@@ -446,7 +447,7 @@ function renderLanding(){
   // ---- header: brand | nav | sign-in / register ----
   const navExams = landingExamList();
   const ddTrigger = el('button',{class:'nav-link nav-dd-trigger', type:'button', 'aria-haspopup':'true', 'aria-expanded':'false'},[
-    'Exams ', el('span',{class:'nav-caret'},['\u25BE'])
+    'Exams ', el('span',{class:'nav-caret'},['▾'])
   ]);
   const ddMenu = el('div',{class:'nav-dropdown-menu'});
   ddMenu.appendChild(el('div',{class:'nav-dd-title'},['Practice exams']));
@@ -696,7 +697,7 @@ function renderLogin(){
   const passField = el('div',{class:'field'},[ el('label',{for:'password'},['Password']), el('input',{id:'password', autocomplete:'current-password', type:'password'}) ]);
   const noticeDiv = state.loginNotice ? el('div',{class:'login-notice'},[state.loginNotice]) : null;
   const errorDiv = el('div',{class:'login-error'},[state.loginError]);
-  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Signing in\u2026' : 'Sign in']);
+  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Signing in…' : 'Sign in']);
   if(state.busy) submitBtn.setAttribute('disabled','disabled');
 
   form.appendChild(userField);
@@ -754,98 +755,230 @@ function renderLogin(){
   return wrap;
 }
 
+// ---- Registration rules: mirror src/validation.js (the server re-checks everything). ----
+const REG_RULES = (function(){
+  const EMAIL_RE = /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/;
+  const NAME_RE = /^[a-zA-Z]+(?:(?:[ '-]|\. ?)[a-zA-Z]+)*\.?$/;
+  const USERNAME_RE = /^[a-z]+(?:[._][a-z]+)*$/;
+  const RESERVED = ['admin','administrator','root','superuser','sysadmin','system','support','help','helpdesk',
+    'info','contact','billing','security','moderator','owner','staff','team','official',
+    'certbench','api','www','mail','null','undefined','test','guest','anonymous'];
+  const cleanName = (v) => v.trim().replace(/\s+/g, ' ');
+  const cleanMobile = (v) => {
+    let d = v.replace(/\D/g, '');
+    if(d.length === 12 && d.startsWith('91')) d = d.slice(2);
+    else if(d.length === 11 && d.startsWith('0')) d = d.slice(1);
+    return d;
+  };
+  const pwChecks = [
+    { id:'len',   label:'8-64 characters',            test:(p)=>p.length >= 8 && p.length <= 64 },
+    { id:'upper', label:'An uppercase letter',        test:(p)=>/[A-Z]/.test(p) },
+    { id:'lower', label:'A lowercase letter',         test:(p)=>/[a-z]/.test(p) },
+    { id:'digit', label:'A number',                   test:(p)=>/[0-9]/.test(p) },
+    { id:'special', label:'A special character (e.g. @ # $ !)', test:(p)=>/[^a-zA-Z0-9\s]/.test(p) },
+    { id:'space', label:'No spaces',                  test:(p)=>p.length > 0 && !/\s/.test(p) }
+  ];
+  return {
+    pwChecks, cleanName, cleanMobile,
+    name(v){
+      const n = cleanName(v);
+      if(!n) return 'Enter your full name.';
+      if(n.length < 2 || n.length > 80) return 'Name must be 2-80 characters.';
+      if(!NAME_RE.test(n) || n.replace(/[^a-zA-Z]/g, '').length < 2) return 'Name can only contain letters, spaces, hyphens, apostrophes and dots.';
+      return null;
+    },
+    email(v){
+      const e = v.trim();
+      if(!e) return 'Enter your email address.';
+      if(e.length > 254 || e.split('@')[0].length > 64 || !EMAIL_RE.test(e)) return 'Enter a valid email address.';
+      return null;
+    },
+    mobile(v){
+      if(!v.trim()) return 'Enter your mobile number.';
+      if(!/^\+?[\d ]+$/.test(v.trim())) return 'Mobile number can only contain digits.';
+      const d = cleanMobile(v);
+      if(d.length !== 10) return 'Mobile number must be exactly 10 digits.';
+      if(!/^[6-9]/.test(d)) return 'Enter a valid Indian mobile number (must start with 6, 7, 8, or 9).';
+      if(/^(\d)\1{9}$/.test(d)) return 'Enter a real mobile number.';
+      return null;
+    },
+    username(v){
+      const u = v.trim().toLowerCase();
+      if(!u) return 'Choose a username.';
+      if(/\d/.test(u)) return 'Username cannot contain numbers.';
+      if(u.length < 3 || u.length > 20) return 'Username must be 3-20 characters.';
+      if(!/^[a-z._]+$/.test(u)) return 'Username can only contain letters, dots and underscores (no spaces or symbols).';
+      if(!USERNAME_RE.test(u)) return 'Username must start and end with a letter, with no two dots/underscores in a row.';
+      if(RESERVED.indexOf(u) !== -1) return 'That username is reserved. Please choose another.';
+      return null;
+    },
+    password(p, username){
+      if(!p) return 'Choose a password.';
+      if(p.length < 8) return 'Password must be at least 8 characters.';
+      if(p.length > 64) return 'Password must be at most 64 characters.';
+      if(/\s/.test(p)) return 'Password cannot contain spaces.';
+      if(!/[a-z]/.test(p) || !/[A-Z]/.test(p) || !/[0-9]/.test(p) || !/[^a-zA-Z0-9]/.test(p)) return 'Password must include an uppercase letter, a lowercase letter, a number and a special character.';
+      const u = (username || '').trim().toLowerCase();
+      if(u.length >= 3 && p.toLowerCase().indexOf(u) !== -1) return 'Password must not contain your username.';
+      return null;
+    }
+  };
+})();
+
 function renderRegister(){
   const wrap = el('div',{class:'login-wrap'});
   const formCol = el('div',{class:'auth-form-col'});
   const card = el('div',{class:'login-card'},[
     el('div',{class:'login-eyebrow'},['Create account']),
     el('h1',{},['Register for CertBench']),
-    el('p',{class:'sub'},["We\u2019ll email a one-time code to this address each time you sign in."]),
+    el('p',{class:'sub'},["We’ll email a one-time code to this address each time you sign in."]),
   ]);
 
-  const form = el('div',{});
-  [
-    ['reg-name','Full name','text','name'],
-    ['reg-email','Email address','email','email'],
-    ['reg-mobile','Mobile number (10 digits)','tel','tel'],
-    ['reg-username','Choose a username','text','username'],
-    ['reg-password','Choose a password (min 6 chars, letters + numbers)','password','new-password'],
-    ['reg-confirm','Confirm password','password','new-password']
-  ].forEach(([id,label,type,auto])=>{
-    form.appendChild(el('div',{class:'field'},[ el('label',{for:id},[label]), el('input',{id, type, autocomplete:auto}) ]));
+  // Typed values and per-field errors live in state so a re-render (e.g. after a server error)
+  // never wipes what the user entered. Passwords are kept only in memory, never stored.
+  if(!state.regDraft) state.regDraft = { values:{}, errors:{}, touched:{} };
+  const draft = state.regDraft;
+
+  const FIELDS = [
+    { key:'name',     id:'reg-name',     label:'Full name',           type:'text',     auto:'name',         max:'80',  hint:'Letters, spaces, hyphens, apostrophes and dots.' },
+    { key:'email',    id:'reg-email',    label:'Email address',       type:'email',    auto:'email',        max:'254' },
+    { key:'mobile',   id:'reg-mobile',   label:'Mobile number (10 digits)', type:'tel', auto:'tel',         max:'10',  hint:'Indian mobile number starting with 6, 7, 8 or 9.' },
+    { key:'username', id:'reg-username', label:'Choose a username',   type:'text',     auto:'username',     max:'20',  hint:'3-20 letters. Dots or underscores allowed between letters. No numbers or spaces.' },
+    { key:'password', id:'reg-password', label:'Choose a password',   type:'password', auto:'new-password', max:'64' },
+    { key:'confirm',  id:'reg-confirm',  label:'Confirm password',    type:'password', auto:'new-password', max:'64' }
+  ];
+
+  const form = el('form',{novalidate:'novalidate'});
+  const inputs = {}, errEls = {};
+  FIELDS.forEach(f=>{
+    const errId = f.id + '-error', hintId = f.id + '-hint';
+    const input = el('input',{id:f.id, name:f.key, type:f.type, autocomplete:f.auto, maxlength:f.max,
+      'aria-describedby': (f.hint ? hintId + ' ' : '') + errId});
+    input.value = draft.values[f.key] || '';
+    if(f.key === 'username') input.setAttribute('autocapitalize', 'none');
+    if(f.key === 'username') input.setAttribute('spellcheck', 'false');
+    const errEl = el('div',{class:'field-error', id:errId, role:'alert'},[]);
+    inputs[f.key] = input; errEls[f.key] = errEl;
+    form.appendChild(el('div',{class:'field', 'data-field':f.key},[
+      el('label',{for:f.id},[f.label]), input,
+      f.hint ? el('div',{class:'field-hint', id:hintId},[f.hint]) : null,
+      f.key === 'password' ? pwChecklist() : null,
+      errEl
+    ]));
   });
+
+  function pwChecklist(){
+    return el('ul',{class:'pw-checklist', id:'reg-password-checklist', 'aria-label':'Password requirements'},
+      REG_RULES.pwChecks.map(c=>el('li',{'data-check':c.id},[c.label])));
+  }
+  function updateChecklist(){
+    const p = inputs.password.value;
+    REG_RULES.pwChecks.forEach(c=>{
+      const li = form.querySelector('.pw-checklist li[data-check="' + c.id + '"]');
+      if(li) li.classList.toggle('ok', c.test(p));
+    });
+  }
 
   // Restrict the mobile field to digits only, capped at 10, as the user types.
-  const mobileInput = form.querySelector('#reg-mobile');
-  mobileInput.setAttribute('inputmode', 'numeric');
-  mobileInput.setAttribute('maxlength', '10');
-  mobileInput.addEventListener('input', function(){
-    this.value = this.value.replace(/\D/g, '').slice(0, 10);
-  });
+  inputs.mobile.setAttribute('inputmode', 'numeric');
 
-  const errorDiv = el('div',{class:'login-error'},[state.registerError]);
+  function validateField(key){
+    const v = inputs[key].value;
+    switch(key){
+      case 'name': return REG_RULES.name(v);
+      case 'email': return REG_RULES.email(v);
+      case 'mobile': return REG_RULES.mobile(v);
+      case 'username': return REG_RULES.username(v);
+      case 'password': return REG_RULES.password(v, inputs.username.value);
+      case 'confirm':
+        if(!v) return 'Confirm your password.';
+        return v === inputs.password.value ? null : 'Passwords do not match.';
+    }
+    return null;
+  }
+  function showError(key, msg){
+    draft.errors[key] = msg || '';
+    errEls[key].textContent = msg || '';
+    inputs[key].setAttribute('aria-invalid', msg ? 'true' : 'false');
+    inputs[key].parentNode.classList.toggle('has-error', !!msg);
+  }
+
+  FIELDS.forEach(f=>{
+    const input = inputs[f.key];
+    input.addEventListener('input', ()=>{
+      if(f.key === 'mobile') input.value = input.value.replace(/\D/g, '').slice(0, 10);
+      draft.values[f.key] = input.value;
+      if(f.key === 'password') updateChecklist();
+      // Once a field has been left, re-check it live so the error clears as soon as it's fixed.
+      if(draft.touched[f.key]) showError(f.key, validateField(f.key));
+      if(f.key === 'password' && draft.touched.confirm) showError('confirm', validateField('confirm'));
+      if(f.key === 'username' && draft.touched.password) showError('password', validateField('password'));
+    });
+    input.addEventListener('blur', ()=>{
+      if(!input.value && !draft.touched[f.key]) return; // don't nag on an untouched empty field
+      draft.touched[f.key] = true;
+      showError(f.key, validateField(f.key));
+    });
+    // Restore errors from the previous render.
+    if(draft.errors[f.key]) showError(f.key, draft.errors[f.key]);
+  });
+  updateChecklist();
+
+  const errorDiv = el('div',{class:'login-error', id:'reg-form-error', role:'alert'},[state.registerError]);
   form.appendChild(errorDiv);
-  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Creating\u2026' : 'Create account']);
+  const submitBtn = el('button',{class:'btn btn-primary', type:'submit'},[state.busy ? 'Creating…' : 'Create account']);
   if(state.busy) submitBtn.setAttribute('disabled','disabled');
   form.appendChild(submitBtn);
 
-  function val(id){ const e = document.getElementById(id); return e ? e.value.trim() : ''; }
-
-  const NAME_RE = /^[a-zA-Z][a-zA-Z .'-]{1,79}$/;
-  const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
-
-  submitBtn.addEventListener('click', async ()=>{
+  form.addEventListener('submit', async (ev)=>{
+    ev.preventDefault();
     if(state.busy) return;
-    const name = val('reg-name'), email = val('reg-email'), mobile = val('reg-mobile'), username = val('reg-username');
-    const password = document.getElementById('reg-password').value;
-    const confirm = document.getElementById('reg-confirm').value;
-
-    if(!name || !email || !mobile || !username || !password || !confirm){
-      state.registerError = 'Please fill in every field.'; render(); return;
+    let firstBad = null;
+    FIELDS.forEach(f=>{
+      draft.touched[f.key] = true;
+      const msg = validateField(f.key);
+      showError(f.key, msg);
+      if(msg && !firstBad) firstBad = f.key;
+    });
+    if(firstBad){
+      state.registerError = 'Please fix the highlighted fields.';
+      errorDiv.textContent = state.registerError;
+      inputs[firstBad].focus();
+      return;
     }
-    if(!NAME_RE.test(name)){
-      state.registerError = 'Enter a valid name (letters only, 2-80 characters).'; render(); return;
-    }
-    if(!EMAIL_RE.test(email)){
-      state.registerError = 'Enter a valid email address.'; render(); return;
-    }
-    if(mobile.length !== 10){
-      state.registerError = 'Mobile number must be exactly 10 digits.'; render(); return;
-    }
-    if(!/^[6-9]/.test(mobile)){
-      state.registerError = 'Enter a valid Indian mobile number (must start with 6, 7, 8, or 9).'; render(); return;
-    }
-    if(username.length < 3 || username.length > 32 || !/^[a-zA-Z0-9_.]+$/.test(username)){
-      state.registerError = 'Username must be 3-32 characters: letters, numbers, dot or underscore.'; render(); return;
-    }
-    if(password.length < 6){
-      state.registerError = 'Password must be at least 6 characters.'; render(); return;
-    }
-    if(!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)){
-      state.registerError = 'Password must include at least one letter and one number.'; render(); return;
-    }
-    if(password !== confirm){ state.registerError = 'Passwords do not match.'; render(); return; }
+    const body = {
+      name: REG_RULES.cleanName(inputs.name.value),
+      email: inputs.email.value.trim(),
+      mobile: REG_RULES.cleanMobile(inputs.mobile.value),
+      username: inputs.username.value.trim().toLowerCase(),
+      password: inputs.password.value
+    };
 
     state.busy = true; state.registerError=''; render();
     try{
-      await api('/auth/register', { method:'POST', body:{ name, email, mobile, username, password } });
+      await api('/auth/register', { method:'POST', body });
       state.busy = false;
       state.registerError = '';
+      state.regDraft = null; // clear the form (and the password) once the account exists
       state.loginError = '';
       state.loginNotice = 'Account created. Sign in with your new username and password.';
       state.screen = 'login';
       render();
     }catch(err){
       state.busy = false;
+      // The server reports per-field problems (e.g. username already taken); show them on the fields.
+      if(err.fields) Object.keys(err.fields).forEach(k=>{ draft.errors[k] = err.fields[k]; draft.touched[k] = true; });
       state.registerError = err.message || 'Could not create your account.';
       render();
+      const bad = err.fields && FIELDS.find(f=>err.fields[f.key]);
+      if(bad){ const i = document.getElementById(bad.id); if(i) i.focus(); }
     }
   });
 
   card.appendChild(form);
   const switchRow = el('p',{class:'auth-switch'},['Already registered? ']);
   const switchLink = el('button',{class:'link-btn', type:'button'},['Sign in']);
-  switchLink.addEventListener('click', ()=>{ state.registerError=''; state.screen='login'; render(); });
+  switchLink.addEventListener('click', ()=>{ state.registerError=''; state.regDraft=null; state.screen='login'; render(); });
   switchRow.appendChild(switchLink);
   card.appendChild(switchRow);
 
@@ -859,7 +992,7 @@ function renderOtp(){
   const wrap = el('div',{class:'login-wrap'});
   const formCol = el('div',{class:'auth-form-col'});
   const card = el('div',{class:'login-card'},[
-    el('div',{class:'login-eyebrow'},['Verify it\u2019s you']),
+    el('div',{class:'login-eyebrow'},['Verify it’s you']),
     el('h1',{},['Enter your one-time code']),
     el('p',{class:'sub'},[`We sent a 6-digit code to ${state.emailMasked}.`]),
   ]);
@@ -867,7 +1000,7 @@ function renderOtp(){
   if(state.devOtp){
     card.appendChild(el('div',{class:'otp-demo'},[
       el('div',{class:'otp-demo-label'},['No email provider is configured on this server']),
-      el('div',{class:'otp-demo-sub'},['Set EMAIL_USER / EMAIL_PASS (a Gmail address + app password) on the server to send real emails. Until then, here\u2019s the code so you can keep testing:']),
+      el('div',{class:'otp-demo-sub'},['Set EMAIL_USER / EMAIL_PASS (a Gmail address + app password) on the server to send real emails. Until then, here’s the code so you can keep testing:']),
       el('div',{class:'otp-demo-code'},[state.devOtp])
     ]));
   }
@@ -877,7 +1010,7 @@ function renderOtp(){
   form.appendChild(otpField);
   const errorDiv = el('div',{class:'login-error'},[state.otpError]);
   form.appendChild(errorDiv);
-  const verifyBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Verifying\u2026' : 'Verify and sign in']);
+  const verifyBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Verifying…' : 'Verify and sign in']);
   if(state.busy) verifyBtn.setAttribute('disabled','disabled');
   form.appendChild(verifyBtn);
 
@@ -951,7 +1084,7 @@ async function loadExams(){
 }
 
 function formatRupees(paise){
-  return '\u20B9' + (paise/100).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  return '₹' + (paise/100).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 let razorpayScriptPromise = null;
@@ -1017,7 +1150,7 @@ async function enrollInExam(slug){
     }
 
     if(data.devMode){
-      // No real gateway configured on the server yet \u2014 enrollment was
+      // No real gateway configured on the server yet — enrollment was
       // completed instantly server-side so the flow can still be tested.
       markExamEnrolled(slug);
       state.enrollBusySlug = null;
@@ -1078,7 +1211,7 @@ function renderForgot(){
   const card = el('div',{class:'login-card'},[
     el('div',{class:'login-eyebrow'},['Reset password']),
     el('h1',{},['Forgot your password?']),
-    el('p',{class:'sub'},['Enter the email on your account and we\u2019ll send a reset code.']),
+    el('p',{class:'sub'},['Enter the email on your account and we’ll send a reset code.']),
   ]);
 
   const form = el('div',{});
@@ -1086,7 +1219,7 @@ function renderForgot(){
   form.appendChild(emailField);
   const errorDiv = el('div',{class:'login-error'},[state.forgotError]);
   form.appendChild(errorDiv);
-  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Sending\u2026' : 'Send reset code']);
+  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Sending…' : 'Send reset code']);
   if(state.busy) submitBtn.setAttribute('disabled','disabled');
   form.appendChild(submitBtn);
 
@@ -1141,14 +1274,14 @@ function renderReset(){
   if(state.resetOtp){
     card.appendChild(el('div',{class:'otp-demo'},[
       el('div',{class:'otp-demo-label'},['No email provider is configured on this server']),
-      el('div',{class:'otp-demo-sub'},['Here\u2019s the code so you can keep testing:']),
+      el('div',{class:'otp-demo-sub'},['Here’s the code so you can keep testing:']),
       el('div',{class:'otp-demo-code'},[state.resetOtp])
     ]));
   }
 
   const form = el('div',{});
   const codeField = el('div',{class:'field'},[ el('label',{for:'reset-code'},['Reset code']), el('input',{id:'reset-code', type:'text', inputmode:'numeric', maxlength:'6'}) ]);
-  const pwField = el('div',{class:'field'},[ el('label',{for:'reset-newpw'},['New password (min 6 chars, letters + numbers)']), el('input',{id:'reset-newpw', type:'password', autocomplete:'new-password'}) ]);
+  const pwField = el('div',{class:'field'},[ el('label',{for:'reset-newpw'},['New password (8-64 chars: upper & lower case, number, special character)']), el('input',{id:'reset-newpw', type:'password', autocomplete:'new-password', maxlength:'64'}) ]);
   const pwConfirmField = el('div',{class:'field'},[ el('label',{for:'reset-newpw2'},['Confirm new password']), el('input',{id:'reset-newpw2', type:'password', autocomplete:'new-password'}) ]);
   form.appendChild(codeField);
   form.appendChild(pwField);
@@ -1156,7 +1289,7 @@ function renderReset(){
 
   const errorDiv = el('div',{class:'login-error'},[state.resetError]);
   form.appendChild(errorDiv);
-  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Updating\u2026' : 'Reset password']);
+  const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Updating…' : 'Reset password']);
   if(state.busy) submitBtn.setAttribute('disabled','disabled');
   form.appendChild(submitBtn);
 
@@ -1166,8 +1299,8 @@ function renderReset(){
     const pw = document.getElementById('reset-newpw').value;
     const pw2 = document.getElementById('reset-newpw2').value;
     if(!code){ state.resetError = 'Enter the 6-digit code.'; render(); return; }
-    if(pw.length < 6){ state.resetError = 'Password must be at least 6 characters.'; render(); return; }
-    if(!/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)){ state.resetError = 'Password must include at least one letter and one number.'; render(); return; }
+    const pwProblem = REG_RULES.password(pw);
+    if(pwProblem){ state.resetError = pwProblem; render(); return; }
     if(pw !== pw2){ state.resetError = 'Passwords do not match.'; render(); return; }
 
     state.busy = true; state.resetError=''; render();
@@ -1212,7 +1345,7 @@ function renderSelect(){
   const searchWrap = el('div',{class:'search-wrap'},[ el('span',{class:'search-icon'},[icon(ICON_SEARCH, 18)]) ]);
   const searchInput = el('input',{
     type:'text', class:'search-input',
-    placeholder:'Search exams by name, e.g. "Azure", "AWS", "Kubernetes"\u2026',
+    placeholder:'Search exams by name, e.g. "Azure", "AWS", "Kubernetes"…',
     value: state.examSearch || ''
   });
   searchInput.addEventListener('input', function(){
@@ -1249,7 +1382,7 @@ function renderSelect(){
 
       const actionBtn = isEnrolled
         ? el('button',{class:'btn btn-primary'},['Choose a practice set', icon(ICON_ARROW, 16)])
-        : el('button',{class:'btn btn-primary', disabled: isBusy?'disabled':undefined},[isBusy ? 'Starting\u2026' : `Enroll \u2014 ${formatRupees(bank.price_inr_paise)}`]);
+        : el('button',{class:'btn btn-primary', disabled: isBusy?'disabled':undefined},[isBusy ? 'Starting…' : `Enroll — ${formatRupees(bank.price_inr_paise)}`]);
 
       actionBtn.addEventListener('click', ()=>{
         if(isEnrolled) loadSets(bank.slug);
@@ -1269,7 +1402,7 @@ function renderSelect(){
           el('span',{},[el('b',{},[bank.duration_minutes+' min']), 'time limit']),
           el('span',{},[el('b',{},[bank.pass_pct+'%']), 'to pass'])
         ]),
-        isEnrolled && isPaid ? el('div',{class:'enrolled-tag'},['\u2713 Enrolled']) : null,
+        isEnrolled && isPaid ? el('div',{class:'enrolled-tag'},['✓ Enrolled']) : null,
         actionBtn
       ]);
       grid.appendChild(card);
@@ -1304,7 +1437,7 @@ function renderSets(){
   const wrap = el('div',{class:'select-wrap'});
   const meta = state.setsExamMeta;
 
-  const backBtn = el('button',{class:'back-link'},['\u2190 Back to exams']);
+  const backBtn = el('button',{class:'back-link'},['← Back to exams']);
   backBtn.addEventListener('click', ()=>{ state.screen='select'; render(); });
   wrap.appendChild(backBtn);
 
@@ -1335,11 +1468,11 @@ function renderSets(){
       el('h3',{class:'cert-name'},[`Set ${s.setNumber}`]),
       el('div',{class:'cert-meta'},[
         el('span',{},[el('b',{},[String(s.questionCount)]), 'questions']),
-        el('span',{},[el('b',{},[s.bestScorePct!==null ? s.bestScorePct+'%' : '\u2014']), 'best score']),
+        el('span',{},[el('b',{},[s.bestScorePct!==null ? s.bestScorePct+'%' : '—']), 'best score']),
         el('span',{},[el('b',{},[String(s.attemptCount)]), s.attemptCount===1 ? 'attempt' : 'attempts'])
       ]),
       el('div',{class:'set-bar', title:'Best score'},[ el('span',{style:`width:${best||0}%`}), el('i',{style:`left:${meta.passPct}%`}) ]),
-      isLocked ? el('p',{class:'lock-note'},[`Pass Set ${s.setNumber-1} (score \u2265 ${meta.passPct}%) to unlock this set.`]) : null,
+      isLocked ? el('p',{class:'lock-note'},[`Pass Set ${s.setNumber-1} (score ≥ ${meta.passPct}%) to unlock this set.`]) : null,
       startBtn
     ]);
     grid.appendChild(card);
@@ -1360,7 +1493,7 @@ async function loadHistory(){
 }
 
 function fmtDate(iso){
-  if(!iso) return '\u2014';
+  if(!iso) return '—';
   const d = new Date(iso.replace(' ', 'T') + 'Z');
   if(isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) + ' '
@@ -1370,7 +1503,7 @@ function fmtDate(iso){
 function renderHistory(){
   const wrap = el('div',{class:'select-wrap'});
 
-  const backBtn = el('button',{class:'back-link'},['\u2190 Back to exams']);
+  const backBtn = el('button',{class:'back-link'},['← Back to exams']);
   backBtn.addEventListener('click', ()=>{ state.screen='select'; render(); });
   wrap.appendChild(backBtn);
 
@@ -1380,7 +1513,7 @@ function renderHistory(){
   ]));
 
   if(!state.myAttempts.length){
-    wrap.appendChild(el('p',{class:'no-results'},['You haven\u2019t completed any exams yet. Once you finish one, it\u2019ll show up here.']));
+    wrap.appendChild(el('p',{class:'no-results'},['You haven’t completed any exams yet. Once you finish one, it’ll show up here.']));
     return wrap;
   }
 
@@ -1399,7 +1532,7 @@ function renderHistory(){
     const row = el('div',{class:'history-row'},[
       el('div',{class:'history-cell history-exam'},[
         el('span',{class:'history-badge', style:`--c:${safeColor(a.color)}`},[a.shortLabel]),
-        el('span',{},[a.examName, ' \u2014 Set ', String(a.setNumber)])
+        el('span',{},[a.examName, ' — Set ', String(a.setNumber)])
       ]),
       el('div',{class:'history-cell'},[fmtDate(a.finishedAt)]),
       el('div',{class:'history-cell history-score'},[`${a.correctCount}/${a.total} (${a.scorePct}%)`]),
@@ -1485,7 +1618,7 @@ function renderExam(){
   const wrap = el('div',{class:'exam-wrap'});
 
   wrap.appendChild(el('div',{class:'exam-bar'},[
-    el('div',{class:'exam-title'},[el('span',{class:'exam-title-badge', style:`--c:${safeColor(bank.color)}`},[bank.shortLabel || bank.short_label || 'Exam']), el('span',{},['Now taking ', el('b',{},[bank.name]), state.examSetNumber ? ` \u2014 Set ${state.examSetNumber}` : ''])]),
+    el('div',{class:'exam-title'},[el('span',{class:'exam-title-badge', style:`--c:${safeColor(bank.color)}`},[bank.shortLabel || bank.short_label || 'Exam']), el('span',{},['Now taking ', el('b',{},[bank.name]), state.examSetNumber ? ` — Set ${state.examSetNumber}` : ''])]),
     el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`},[ el('span',{class:'dot'}), el('span',{class:'time-label'},[fmtTime(state.secondsLeft)]) ])
   ]));
 
@@ -1583,7 +1716,7 @@ function goToReview(){
 }
 
 function exitExam(){
-  const ok = window.confirm('Exit this exam? Your progress on this set won\u2019t be saved, and you can start it again later.');
+  const ok = window.confirm('Exit this exam? Your progress on this set won’t be saved, and you can start it again later.');
   if(!ok) return;
   clearInterval(state.timerHandle);
   const slug = state.setsExamSlug || (state.examMeta && state.examMeta.slug);
@@ -1604,7 +1737,7 @@ function renderReview(){
   const wrap = el('div',{class:'exam-wrap'});
 
   wrap.appendChild(el('div',{class:'exam-bar'},[
-    el('div',{class:'exam-title'},['Reviewing ', el('b',{},[bank.name]), state.examSetNumber ? ` \u2014 Set ${state.examSetNumber}` : '']),
+    el('div',{class:'exam-title'},['Reviewing ', el('b',{},[bank.name]), state.examSetNumber ? ` — Set ${state.examSetNumber}` : '']),
     el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`},[ el('span',{class:'dot'}), el('span',{class:'time-label'},[fmtTime(state.secondsLeft)]) ])
   ]));
 
@@ -1641,7 +1774,7 @@ function renderReview(){
   panel.appendChild(paletteGrid);
 
   const nav = el('div',{class:'exam-nav'});
-  const backBtn = el('button',{class:'btn btn-ghost'},['\u2190 Back to exam']);
+  const backBtn = el('button',{class:'btn btn-ghost'},['← Back to exam']);
   backBtn.addEventListener('click', ()=>{ state.screen='exam'; render(); });
   const exitBtn = el('button',{class:'btn btn-danger'},['Exit exam']);
   exitBtn.addEventListener('click', exitExam);
@@ -1720,7 +1853,7 @@ function renderResults(){
     item.appendChild(el('p',{class:'review-q'},[`${i+1}. ${d.text}`]));
     const yourText = (d.selectedIndex===null||d.selectedIndex===undefined) ? 'No answer selected' : d.options[d.selectedIndex];
     item.appendChild(el('div',{class:'review-row your '+(d.isCorrect?'right':'wrong')},[
-      el('span',{class:'lbl'},['Your answer']), el('span',{},[yourText, d.isCorrect ? '  \u2713' : '  \u2717'])
+      el('span',{class:'lbl'},['Your answer']), el('span',{},[yourText, d.isCorrect ? '  ✓' : '  ✗'])
     ]));
     if(!d.isCorrect){
       item.appendChild(el('div',{class:'review-row correctans'},[
@@ -1755,7 +1888,7 @@ function signOut(){
     visitedIds:{}, skippedIds:{},
     results:null, myAttempts:[], examSearch:'',
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
-    loginError:'', loginNotice:'', otpError:'', registerError:''
+    loginError:'', loginNotice:'', otpError:'', registerError:'', regDraft:null
   });
   render();
   loadLandingExams();
