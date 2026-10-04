@@ -119,3 +119,24 @@ test('E2E: register -> duplicate rejected inline -> sign in with OTP -> exam lis
   await page.waitForSelector('h1:has-text("Choose a mock exam")');
   await page.close();
 });
+
+test('eye icon shows and hides passwords on sign-up and sign-in', async () => {
+  const page = await openRegister();
+  for(const id of ['reg-password', 'reg-confirm']){
+    const toggle = page.locator(`button.pw-toggle[aria-controls="${id}"]`);
+    assert.equal(await page.getAttribute('#' + id, 'type'), 'password');
+    await toggle.click();
+    assert.equal(await page.getAttribute('#' + id, 'type'), 'text');
+    assert.equal(await toggle.getAttribute('aria-label'), 'Hide password');
+    await toggle.click();
+    assert.equal(await page.getAttribute('#' + id, 'type'), 'password');
+  }
+  await page.goto(srv.base + '/#login');
+  await page.reload();
+  await page.waitForSelector('#password');
+  await page.fill('#password', 'Secret#1');
+  await page.click('button.pw-toggle[aria-controls="password"]');
+  assert.equal(await page.getAttribute('#password', 'type'), 'text');
+  assert.equal(await page.inputValue('#password'), 'Secret#1');
+  await page.close();
+});
