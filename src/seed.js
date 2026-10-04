@@ -670,6 +670,11 @@ const BANKS = [
   }
 ];
 
+// The six exams above were the original built-in list; every later certification lives in
+// src/banks/ (metadata in index.js, 150 questions per exam in <slug>.json).
+const ORIGINAL_SLUGS = BANKS.map(b => b.slug);
+BANKS.push(...require('./banks').BANKS);
+
 function shuffleOptions(options, correctIndex){
   const idx = [0,1,2,3];
   for(let i=idx.length-1;i>0;i--){
@@ -712,7 +717,8 @@ function assignSets(poolSize){
   return assignments;
 }
 
-function seed(){
+// `only` (optional): a list of slugs to seed, leaving every other built-in exam alone.
+function seed({ only } = {}){
   const insertExam = db.prepare(`
     INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise)
     VALUES (@slug, @name, @description, @duration_minutes, @pass_pct, @color, @short_label, @price_inr_paise)
@@ -733,6 +739,7 @@ function seed(){
 
   const run = db.transaction(() => {
     for(const bank of BANKS){
+      if(only && !only.includes(bank.slug)) continue;
       // The admin panel is the source of truth once it's in use, so by default the seed only
       // ADDS built-in exams that don't exist yet. It never modifies an exam that already
       // exists, and even with --update it never touches one that was created or edited in the
@@ -777,4 +784,4 @@ if(require.main === module){
   console.log('Seeding complete.');
 }
 
-module.exports = { seed, BANKS };
+module.exports = { seed, BANKS, ORIGINAL_SLUGS };

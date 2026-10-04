@@ -487,11 +487,13 @@ function landingExamList(){
 // Matched first on the exam's short label, then on keywords in its name, so a new exam added in
 // the admin panel lands in a sensible group without any code change (anything unmatched goes to "More").
 const EXAM_CATEGORIES = [
-  { id:'cloud',      label:'Cloud',               labels:['AZ','AWS','GCP','SAA'] },
-  { id:'devops',     label:'DevOps & Containers', labels:['K8S','DEV'] },
+  { id:'cloud',      label:'Cloud',               labels:['AZ','AWS','GCP','SAA','SAP','DVA','SOA','DOP','A104','A305','ACE','PCA','OCI'] },
+  { id:'devops',     label:'DevOps & Containers', labels:['K8S','DEV','CKA','CKAD','CKS','TF'] },
   { id:'testing',    label:'Testing & QA',        labels:['QA','CTFL'] },
-  { id:'security',   label:'Security',            labels:['SEC+'] },
-  { id:'management', label:'IT Management',       labels:['ITIL','PMP'] },
+  { id:'security',   label:'Security',            labels:['SEC+','CYSA','PEN+','CC','CISP','CCSP','CISA','CISM','CRSC','GSEC','SCS','A500','S900'] },
+  { id:'networking', label:'Networking & IT',     labels:['A+','NET+','CCNA','CCNP','RHSA','RHCE'] },
+  { id:'data',       label:'Data & Analytics',    labels:['DEA','PDE','DBX','SNOW','P300'] },
+  { id:'management', label:'IT Management',       labels:['ITIL','PMP','TOGF','CSA','SFDC'] },
   { id:'jee',        label:'JEE Main',            labels:['PHY','CHEM','MATH'] },
   { id:'other',      label:'More',                labels:[] }
 ];
@@ -500,6 +502,8 @@ const CATEGORY_KEYWORDS = [
   ['security', /security|cissp|\bceh\b|cyber/i],
   ['management', /\bitil\b|\bpmp\b|project management|scrum|prince2/i],
   ['testing', /testing|\bqa\b|istqb|selenium|tosca/i],
+  ['networking', /network|\bccna\b|\bccnp\b|cisco|linux|red hat/i],
+  ['data', /\bdata\b|analytics|power bi|snowflake|databricks/i],
   ['devops', /devops|kubernetes|docker|container|ci\/cd|terraform/i],
   ['cloud', /azure|\baws\b|google cloud|\bgcp\b|cloud/i]
 ];

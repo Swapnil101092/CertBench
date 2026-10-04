@@ -15,15 +15,24 @@ async function startServer(){
     // No email provider: the API returns devOtp so the full login flow can be tested.
     EMAIL_USER: '', EMAIL_PASS: '', BREVO_API_KEY: '', ADMIN_EMAILS: ''
   };
-  const proc = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = '';
-  proc.stdout.on('data', d => { log += d; });
-  proc.stderr.on('data', d => { log += d; });
+  let proc, log = '';
   const base = `http://127.0.0.1:${port}`;
-  for(let i = 0; i < 100; i++){
-    try{ const r = await fetch(base + '/api/health'); if(r.ok) break; }catch(e){}
-    await new Promise(r => setTimeout(r, 100));
-    if(i === 99) throw new Error('Server did not start:\n' + log);
+  async function launch(){
+    proc = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stdout.on('data', d => { log += d; });
+    proc.stderr.on('data', d => { log += d; });
+    for(let i = 0; i < 100; i++){
+      try{ const r = await fetch(base + '/api/health'); if(r.ok) break; }catch(e){}
+      await new Promise(r => setTimeout(r, 100));
+      if(i === 99) throw new Error('Server did not start:\n' + log);
+    }
+  }
+  await launch();
+  // Stop and start the server again on the same database (e.g. to test what happens on the next deploy).
+  async function restart(){
+    const exited = new Promise(r => proc.once('exit', r));
+    proc.kill(); await exited;
+    await launch();
   }
   let ip = 0;
   async function api(p, { method = 'GET', body, token, raw } = {}){
@@ -39,7 +48,7 @@ async function startServer(){
     const { DatabaseSync } = require('node:sqlite');
     const d = new DatabaseSync(env.DB_PATH); try{ return d.prepare(statement).run(...params); } finally { d.close(); }
   }
-  return { api, stop, base, sql, log: () => log };
+  return { api, stop, restart, base, sql, dbPath: env.DB_PATH, log: () => log };
 }
 
 let n = 0;

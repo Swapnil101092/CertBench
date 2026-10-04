@@ -28,7 +28,7 @@ scoring, and cross-user data isolation) before being handed to you.
 npm install
 cp .env.example .env
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"   # paste into .env as JWT_SECRET
-npm run seed        # loads the 6 built-in exams (optional: the server also does this on first start)
+npm run seed        # loads the built-in exams (optional: the server also does this on first start)
 npm start            # http://localhost:3000
 ```
 
@@ -263,7 +263,7 @@ from the website itself.
 **`npm run seed` no longer overwrites your work**
 - On an existing database it only **adds** built-in certificates that are missing. It never changes
   one that already exists.
-- `npm run seed -- --update` refreshes the built-in certificates from `src/seed.js`, but still skips
+- `npm run seed -- --update` refreshes the built-in certificates from `src/seed.js` and `src/banks/`, but still skips
   any certificate you have created or edited in the admin panel.
 - To start completely fresh, stop the server, delete the `data` folder, then run `npm run seed`.
   This erases all accounts, results and admin changes.
@@ -284,6 +284,9 @@ redeploy starts from an empty database and all accounts and results are lost.
    persists across deploys (Settings → Volumes), and set `DB_PATH=/app/data/certbench.db`.
 5. Deploy. On the very first start the server loads the built-in exams by itself (the log shows
    `[SETUP] Empty database: loading the built-in exams`). No seed command is needed.
+   When a later release adds new built-in exams, the next start loads just those (the log shows
+   `[SETUP] Loading N new built-in exam(s)`). Each built-in exam is offered once per database, so
+   one you deleted in the admin panel is not brought back.
 6. Railway gives you a live `*.up.railway.app` URL immediately — that's your site. Add a
    custom domain under Settings → Domains if you own one.
 
@@ -309,8 +312,9 @@ certificates, questions and site text at `https://your-site/admin`.
   volume/disk, as above) — it holds every registered user and every exam attempt.
 - **Rate limiting** is already on for `/api/auth/*` (30 requests / 15 min / IP) to blunt
   brute-force login and OTP-guessing attempts; adjust in `server.js` if needed.
-- **Adding more exams**: use the admin panel (section 2i). Editing `src/seed.js` still works for the
-  built-in list, but the admin panel is the normal way now.
+- **Adding more exams**: use the admin panel (section 2i). The built-in list is the six exams in
+  `src/seed.js` plus the certifications in `src/banks/` (metadata in `index.js`, 150 questions per
+  exam in `<slug>.json`, split into 5 sets of 30); adding one there loads it on the next start.
 - **Switching to Postgres** later (e.g. if you outgrow SQLite) mainly means swapping
   `src/db.js`'s `node:sqlite` calls for a Postgres client; the route files use plain SQL
   and would need only minor syntax changes (`?` placeholders → `$1`, etc).
