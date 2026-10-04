@@ -69,6 +69,22 @@ function el(tag, attrs, children){
   return e;
 }
 
+// Wraps a password <input> with an eye button that toggles show/hide.
+const EYE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.4 10.4 0 0 1 12 19c-6.4 0-10-7-10-7a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a18.6 18.6 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
+function pwToggle(input){
+  const btn = el('button',{type:'button', class:'pw-toggle', 'aria-label':'Show password', 'aria-pressed':'false', 'aria-controls':input.id, html:EYE_SVG});
+  btn.addEventListener('mousedown', e=>e.preventDefault()); // keep focus/caret in the input
+  btn.addEventListener('click', ()=>{
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? EYE_OFF_SVG : EYE_SVG;
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+  });
+  return el('div',{class:'pw-wrap'},[input, btn]);
+}
+
 // ---- CertBench logo: the mark (bench + check) and the "CertBench" wordmark ----
 function brandMark(){ return el('img',{class:'brand-mark', src:'/logo-mark.svg', alt:'', width:'28', height:'28'}); }
 function brandWord(suffix){
@@ -963,7 +979,7 @@ function renderLogin(){
 
   const form = el('div',{});
   const userField = el('div',{class:'field'},[ el('label',{for:'username'},['Username']), el('input',{id:'username', autocomplete:'username', type:'text'}) ]);
-  const passField = el('div',{class:'field'},[ el('label',{for:'password'},['Password']), el('input',{id:'password', autocomplete:'current-password', type:'password'}) ]);
+  const passField = el('div',{class:'field'},[ el('label',{for:'password'},['Password']), pwToggle(el('input',{id:'password', autocomplete:'current-password', type:'password'})) ]);
   const noticeDiv = state.loginNotice ? el('div',{class:'login-notice'},[state.loginNotice]) : null;
   const errorDiv = el('div',{class:'login-error'},[state.loginError]);
   const submitBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Signing in…' : 'Sign in']);
@@ -1129,7 +1145,7 @@ function renderRegister(){
     const errEl = el('div',{class:'field-error', id:errId, role:'alert'},[]);
     inputs[f.key] = input; errEls[f.key] = errEl;
     form.appendChild(el('div',{class:'field', 'data-field':f.key},[
-      el('label',{for:f.id},[f.label]), input,
+      el('label',{for:f.id},[f.label]), f.type === 'password' ? pwToggle(input) : input,
       f.hint ? el('div',{class:'field-hint', id:hintId},[f.hint]) : null,
       f.key === 'password' ? pwChecklist() : null,
       errEl
@@ -1169,7 +1185,7 @@ function renderRegister(){
     draft.errors[key] = msg || '';
     errEls[key].textContent = msg || '';
     inputs[key].setAttribute('aria-invalid', msg ? 'true' : 'false');
-    inputs[key].parentNode.classList.toggle('has-error', !!msg);
+    inputs[key].closest('.field').classList.toggle('has-error', !!msg);
   }
 
   FIELDS.forEach(f=>{
@@ -1550,8 +1566,8 @@ function renderReset(){
 
   const form = el('div',{});
   const codeField = el('div',{class:'field'},[ el('label',{for:'reset-code'},['Reset code']), el('input',{id:'reset-code', type:'text', inputmode:'numeric', maxlength:'6'}) ]);
-  const pwField = el('div',{class:'field'},[ el('label',{for:'reset-newpw'},['New password (8-64 chars: upper & lower case, number, special character)']), el('input',{id:'reset-newpw', type:'password', autocomplete:'new-password', maxlength:'64'}) ]);
-  const pwConfirmField = el('div',{class:'field'},[ el('label',{for:'reset-newpw2'},['Confirm new password']), el('input',{id:'reset-newpw2', type:'password', autocomplete:'new-password'}) ]);
+  const pwField = el('div',{class:'field'},[ el('label',{for:'reset-newpw'},['New password (8-64 chars: upper & lower case, number, special character)']), pwToggle(el('input',{id:'reset-newpw', type:'password', autocomplete:'new-password', maxlength:'64'})) ]);
+  const pwConfirmField = el('div',{class:'field'},[ el('label',{for:'reset-newpw2'},['Confirm new password']), pwToggle(el('input',{id:'reset-newpw2', type:'password', autocomplete:'new-password'})) ]);
   form.appendChild(codeField);
   form.appendChild(pwField);
   form.appendChild(pwConfirmField);
