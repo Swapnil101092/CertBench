@@ -65,17 +65,36 @@ app.use((err, req, res, next) => {
 });
 
 // First start on an empty database (e.g. a fresh deploy on Railway/Render): load the built-in exams
-// automatically, so hosts without a shell still get questions. This runs only ONCE per database: a
-// marker is saved afterwards, so if you later delete certificates in the admin panel they stay deleted.
-(function firstRunSeed(){
+// automatically, so hosts without a shell still get questions. Each built-in exam is offered only
+// ONCE per database: the slugs already offered are saved, so if you later delete a certificate in
+// the admin panel it stays deleted, while built-in exams added in a later release still appear on
+// the next start.
+(function seedBuiltInExams(){
   const db = require('./src/db');
-  const done = db.prepare("SELECT 1 FROM settings WHERE name = 'initial_seed_done'").get();
-  if(done) return;
-  const examCount = db.prepare('SELECT COUNT(*) AS n FROM exams').get().n;
-  if(examCount === 0){
-    console.log('[SETUP] Empty database: loading the built-in exams (first start only)...');
-    require('./src/seed').seed();
+  const { seed, BANKS, ORIGINAL_SLUGS } = require('./src/seed');
+  const getSetting = (name) => db.prepare('SELECT value FROM settings WHERE name = ?').get(name);
+  const allSlugs = BANKS.map(b => b.slug);
+  let offered;
+  if(!getSetting('initial_seed_done')){
+    const examCount = db.prepare('SELECT COUNT(*) AS n FROM exams').get().n;
+    if(examCount === 0){
+      console.log('[SETUP] Empty database: loading the built-in exams (first start only)...');
+      seed();
+    }
+    offered = allSlugs;
+  } else {
+    // Databases seeded before this list existed were offered the original six exams only.
+    const saved = getSetting('builtin_exams_offered');
+    offered = saved ? JSON.parse(saved.value) : ORIGINAL_SLUGS;
+    const fresh = allSlugs.filter(slug => !offered.includes(slug));
+    if(fresh.length){
+      console.log(`[SETUP] Loading ${fresh.length} new built-in exam(s)...`);
+      seed({ only: fresh });
+      offered = offered.concat(fresh);
+    }
   }
+  db.prepare('INSERT INTO settings (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value')
+    .run('builtin_exams_offered', JSON.stringify(offered));
   db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES ('initial_seed_done', datetime('now'))").run();
 })();
 
