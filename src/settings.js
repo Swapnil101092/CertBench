@@ -12,6 +12,7 @@ const DEFAULT_ABOUT = [
 const DEFAULTS = {
   promo_enabled: '1',
   promo_text: '',                    // blank = the site writes its own line from the live exam list
+  visitor_counter_enabled: '1',      // home page "Total / Today's visitors" card
   about_text: DEFAULT_ABOUT,         // blank = this default
   contact_title: 'Contact us',
   contact_intro: 'Questions about an exam, a payment or your account? Reach out and we will get back to you.',
@@ -38,6 +39,7 @@ function getForAdmin(){
   return {
     promoEnabled: r.promo_enabled === '1',
     promoText: r.promo_text,
+    visitorCounterEnabled: r.visitor_counter_enabled === '1',
     aboutText: r.about_text,
     contactTitle: r.contact_title,
     contactIntro: r.contact_intro,
@@ -54,6 +56,7 @@ function getPublic(){
   const aboutSource = r.about_text.trim() ? r.about_text : DEFAULT_ABOUT;
   return {
     promo: { enabled: r.promo_enabled === '1', text: r.promo_text.trim() },
+    visitorCounter: { enabled: r.visitor_counter_enabled === '1' },
     about: aboutSource.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
     aboutPhotos: photos.list().map(p => ({ id: p.id, caption: p.caption, url: p.url })),
     contact: { title: r.contact_title.trim() || DEFAULTS.contact_title, intro: r.contact_intro.trim(), address: r.contact_address, phone: r.contact_phone, email: r.contact_email }
@@ -68,6 +71,10 @@ function validate(input){
   if('promoEnabled' in input){
     if(typeof input.promoEnabled !== 'boolean') errors.promoEnabled = 'Must be on or off.';
     else clean.promo_enabled = input.promoEnabled ? '1' : '0';
+  }
+  if('visitorCounterEnabled' in input){
+    if(typeof input.visitorCounterEnabled !== 'boolean') errors.visitorCounterEnabled = 'Must be on or off.';
+    else clean.visitor_counter_enabled = input.visitorCounterEnabled ? '1' : '0';
   }
   if('promoText' in input){
     const v = str(input.promoText);

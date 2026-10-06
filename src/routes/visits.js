@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const visits = require('../visits');
+const { requireAdmin } = require('../auth');
 
 const router = express.Router();
 
@@ -20,6 +21,12 @@ router.post('/', recordLimiter, (req, res) => {
   visits.record(id);
   res.set('Cache-Control', 'no-store');
   res.json(visits.counts());
+});
+
+// Admin only: the real numbers and whether the card is shown (for Admin panel > Site settings).
+router.get('/admin', requireAdmin, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(visits.adminCounts());
 });
 
 module.exports = router;
