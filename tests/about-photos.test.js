@@ -6,10 +6,9 @@ const { startServer, validUser } = require('./helpers');
 let srv, admin, user;
 async function signUp(over){
   const u = validUser(over);
-  await srv.api('/auth/register', { method: 'POST', body: u });
+  await srv.signUp(u);
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
-  const v = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } });
-  return v.data.token;
+  return l.data.token;
 }
 // A real 1x1 PNG
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';

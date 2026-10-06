@@ -110,7 +110,10 @@ app.listen(PORT, () => {
     console.log(`[ADMIN] Admin panel access via ADMIN_EMAILS is ON for: ${admins.join(', ')}`);
   } else if(admins.length){
     console.warn('[ADMIN] ADMIN_EMAILS is set but IGNORED: email sending is not configured (BREVO_API_KEY + EMAIL_FROM_ADDRESS, or EMAIL_USER / EMAIL_PASS).');
-    console.warn('[ADMIN] Without real email, login codes are shown on screen, so anyone could sign in as that address.');
+    console.warn('[ADMIN] Without real email, sign-up codes are shown on screen, so anyone could register with that address.');
     console.warn('[ADMIN] Configure email, or use `npm run make-admin -- <username>` from a shell on the server.');
   }
+  // Mobile numbers are verified by SMS at sign-up only when SMS is set up.
+  if(require('./src/sms').isConfigured()) console.log('[SMS] Mobile verification at sign-up is ON (Brevo SMS, sender ' + process.env.SMS_SENDER + ').');
+  else console.warn('[SMS] SMS_SENDER is not set: sign-up verifies the email only, not the mobile number.');
 });

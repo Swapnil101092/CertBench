@@ -71,9 +71,9 @@ function getTransporter(){
 
 async function sendOtpEmail(toEmail, code){
   return sendCodeEmail(toEmail, code, {
-    subject: 'Your CertBench verification code',
-    intro: 'Your CertBench verification code is:',
-    footer: "It expires in 5 minutes. If you didn't request this, you can ignore this email."
+    subject: 'Verify your email for CertBench',
+    intro: 'Use this code to verify your email and finish creating your CertBench account:',
+    footer: "It expires in 10 minutes. If you didn't sign up for CertBench, you can ignore this email."
   });
 }
 

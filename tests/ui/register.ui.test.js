@@ -84,14 +84,34 @@ test('password checklist ticks off rules as you type', async () => {
   await page.close();
 });
 
-test('E2E: register -> duplicate rejected inline -> sign in with OTP -> exam list', async () => {
+test('E2E: register -> verify email + mobile codes -> signed in -> duplicate rejected -> password-only sign in', async () => {
   const user = { name: 'Ui Tester', email: 'ui.tester@example.com', mobile: '9812345670', username: 'ui_tester', password: 'Ui#Tester9' };
   let page = await openRegister();
   for(const [k, v] of Object.entries(user)) await page.fill('#reg-' + k, v);
   await page.fill('#reg-confirm', user.password);
   await page.click('button[type=submit]');
-  await page.waitForSelector('.login-notice');
-  assert.match(await page.textContent('.login-notice'), /Account created/);
+
+  // Step 2: one box per code; on this test server the codes are shown on screen.
+  await page.waitForSelector('#reg-email-code');
+  assert.match(await page.textContent('h1'), /Verify your email and mobile/);
+  assert.match(await page.textContent('.login-card .sub'), /\+91 98\*{6}70/);
+  const emailCode = (await page.textContent('#dev-email-code')).trim();
+  const mobileCode = (await page.textContent('#dev-mobile-code')).trim();
+  // Resend is held back for 30 seconds.
+  assert.equal(await page.isDisabled('.reg-resend-btn[data-channel="mobile"]'), true);
+  assert.match(await page.textContent('.reg-resend-btn[data-channel="mobile"]'), /Resend in \d+s/);
+
+  // A wrong mobile code is flagged on that box only.
+  await page.fill('#reg-email-code', emailCode);
+  await page.fill('#reg-mobile-code', mobileCode === '123456' ? '654321' : '123456');
+  await page.click('button:has-text("Verify and create account")');
+  await page.waitForFunction(() => document.getElementById('reg-mobile-code-error').textContent.length > 0);
+  assert.match(await page.textContent('#reg-mobile-code-error'), /doesn’t match/);
+  assert.equal(await page.textContent('#reg-email-code-error'), '');
+
+  await page.fill('#reg-mobile-code', mobileCode);
+  await page.click('button:has-text("Verify and create account")');
+  await page.waitForSelector('h1:has-text("Choose a mock exam")');   // signed in straight away
   await page.close();
 
   // Same username again: server says it's taken, shown on the username field, typed values kept.
@@ -105,18 +125,28 @@ test('E2E: register -> duplicate rejected inline -> sign in with OTP -> exam lis
   assert.equal(await page.inputValue('#reg-email'), 'other@example.com');
   await page.close();
 
-  // Sign in end to end.
+  // Sign in: username + password only, no code screen.
   page = await browser.newPage();
   await page.goto(srv.base + '/#login');
   await page.waitForSelector('#username');
   await page.fill('#username', user.username);
   await page.fill('#password', user.password);
   await page.click('button:has-text("Sign in")');
-  await page.waitForSelector('.otp-demo-code');
-  const code = (await page.textContent('.otp-demo-code')).trim();
-  await page.fill('#otp-input', code);
-  await page.click('button:has-text("Verify and sign in")');
   await page.waitForSelector('h1:has-text("Choose a mock exam")');
+  await page.close();
+});
+
+test('verify step: "Change your details" goes back to the form with everything still filled in', async () => {
+  const page = await openRegister();
+  const user = { name: 'Back Tester', email: 'back.tester@example.com', mobile: '9812345699', username: 'back_tester', password: 'Back#Tester9' };
+  for(const [k, v] of Object.entries(user)) await page.fill('#reg-' + k, v);
+  await page.fill('#reg-confirm', user.password);
+  await page.click('button[type=submit]');
+  await page.waitForSelector('#reg-email-code');
+  await page.click('button:has-text("Change your details")');
+  await page.waitForSelector('#reg-name');
+  assert.equal(await page.inputValue('#reg-email'), user.email);
+  assert.equal(await page.inputValue('#reg-mobile'), user.mobile);
   await page.close();
 });
 

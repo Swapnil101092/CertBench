@@ -1,4 +1,4 @@
-// Regression + validation tests for registration and the sign-in flow.
+// Regression + validation tests for registration (with email + mobile codes) and the sign-in flow.
 // Run with:  npm test
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,7 +8,8 @@ let srv;
 test.before(async () => { srv = await startServer(); });
 test.after(() => srv && srv.stop());
 
-async function register(over){ return srv.api('/auth/register', { method: 'POST', body: validUser(over) }); }
+// The full sign-up: details, then both verification codes. Field problems fail at the first step.
+async function register(over){ return srv.signUp(validUser(over)); }
 async function expectRejected(over, msgPart){
   const r = await register(over);
   assert.equal(r.status, 400, `expected 400 for ${JSON.stringify(over)}, got ${r.status} ${JSON.stringify(r.data)}`);
@@ -22,28 +23,49 @@ async function expectAccepted(over){
 }
 
 // ---------------------------------------------------------------- happy path / end to end
-test('E2E: register -> login -> OTP -> /me -> forgot -> reset -> login with new password', async () => {
+test('E2E: register -> email + mobile codes -> signed in -> /me -> forgot -> reset -> password sign-in', async () => {
   const u = validUser();
-  const reg = await srv.api('/auth/register', { method: 'POST', body: u });
-  assert.equal(reg.status, 201);
-  assert.equal(reg.data.user.username, u.username);
-  assert.equal(reg.data.user.isAdmin, false);
-  assert.ok(!('password_hash' in reg.data.user), 'never leak the password hash');
+  const step1 = await srv.api('/auth/register', { method: 'POST', body: u });
+  assert.equal(step1.status, 201);
+  assert.ok(step1.data.registrationId, 'a sign-up id for step 2');
+  assert.equal(step1.data.needsMobileCode, true);
+  assert.match(step1.data.devEmailOtp, /^\d{6}$/);
+  assert.match(step1.data.devMobileOtp, /^\d{6}$/);
+  assert.match(step1.data.emailMasked, /\*/);
+  assert.match(step1.data.mobileMasked, /^\+91 \d\d\*{6}\d\d$/);
+  assert.ok(!('user' in step1.data) && !('token' in step1.data), 'no account until the codes are confirmed');
 
-  const login = await srv.api('/auth/login', { method: 'POST', body: { username: u.username.toUpperCase(), password: u.password } });
-  assert.equal(login.status, 200, 'username sign-in is case-insensitive');
-  assert.ok(login.data.pendingToken && login.data.devOtp);
+  // Not an account yet: the username cannot sign in.
+  const early = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
+  assert.equal(early.status, 401);
 
-  const bad = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: '000000' } });
+  // Wrong codes: each one is reported on its own field.
+  const bad = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: step1.data.registrationId, emailCode: step1.data.devEmailOtp, mobileCode: '000000' } });
   assert.equal(bad.status, 400);
-  const ok = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: login.data.devOtp } });
-  assert.equal(ok.status, 200);
-  const reuse = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: login.data.pendingToken, code: login.data.devOtp } });
-  assert.notEqual(reuse.status, 200, 'an OTP can only be used once');
+  assert.ok(bad.data.fields.mobileCode && !bad.data.fields.emailCode);
+  const bad2 = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: step1.data.registrationId, emailCode: '12', mobileCode: step1.data.devMobileOtp } });
+  assert.ok(bad2.data.fields.emailCode && !bad2.data.fields.mobileCode);
+
+  const ok = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: step1.data.registrationId, emailCode: step1.data.devEmailOtp, mobileCode: step1.data.devMobileOtp } });
+  assert.equal(ok.status, 201);
+  assert.ok(ok.data.token, 'signed in straight away');
+  assert.equal(ok.data.user.username, u.username);
+  assert.equal(ok.data.user.isAdmin, false);
+  assert.ok(!('password_hash' in ok.data.user), 'never leak the password hash');
+  const reuse = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: step1.data.registrationId, emailCode: step1.data.devEmailOtp, mobileCode: step1.data.devMobileOtp } });
+  assert.equal(reuse.status, 400, 'a sign-up can only be completed once');
+  assert.equal(reuse.data.restart, true);
 
   const me = await srv.api('/auth/me', { token: ok.data.token });
   assert.equal(me.status, 200);
   assert.equal(me.data.user.email, u.email.toLowerCase());
+
+  // Sign-in is username + password only: no code.
+  const login = await srv.api('/auth/login', { method: 'POST', body: { username: u.username.toUpperCase(), password: u.password } });
+  assert.equal(login.status, 200, 'username sign-in is case-insensitive');
+  assert.ok(login.data.token && !login.data.pendingToken && !login.data.devOtp);
+  assert.equal((await srv.api('/auth/me', { token: login.data.token })).status, 200);
+  assert.equal((await srv.api('/auth/verify-otp', { method: 'POST', body: {} })).status, 404, 'the old sign-in code step is gone');
 
   const forgot = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: u.email } });
   assert.equal(forgot.status, 200);
@@ -51,13 +73,69 @@ test('E2E: register -> login -> OTP -> /me -> forgot -> reset -> login with new 
   assert.equal(weak.status, 400, 'reset must enforce the same password rules as registration');
   const reset = await srv.api('/auth/reset-password', { method: 'POST', body: { resetToken: forgot.data.resetToken, code: forgot.data.devOtp, newPassword: 'NewPass#456' } });
   assert.equal(reset.status, 200);
-  const old = await srv.api('/auth/me', { token: ok.data.token });
+  const old = await srv.api('/auth/me', { token: login.data.token });
   assert.equal(old.status, 401, 'password reset signs out old sessions');
 
   const oldPw = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
   assert.equal(oldPw.status, 401);
   const newPw = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: 'NewPass#456' } });
   assert.equal(newPw.status, 200);
+});
+
+test('verification: too many wrong codes ends the sign-up', async () => {
+  const s1 = await srv.api('/auth/register', { method: 'POST', body: validUser() });
+  const body = { registrationId: s1.data.registrationId, emailCode: '111111', mobileCode: '111111' };
+  for(let i = 0; i < 5; i++) assert.equal((await srv.api('/auth/register/verify', { method: 'POST', body })).status, 400);
+  const locked = await srv.api('/auth/register/verify', { method: 'POST', body: { ...body, emailCode: s1.data.devEmailOtp, mobileCode: s1.data.devMobileOtp } });
+  assert.equal(locked.status, 429);
+  assert.equal(locked.data.restart, true);
+});
+
+test('verification: expired codes are refused', async () => {
+  const s1 = await srv.api('/auth/register', { method: 'POST', body: validUser() });
+  srv.sql('UPDATE pending_registrations SET expires_at = ? WHERE id = ?', Date.now() - 1000, s1.data.registrationId);
+  const r = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: s1.data.registrationId, emailCode: s1.data.devEmailOtp, mobileCode: s1.data.devMobileOtp } });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /expired/i);
+});
+
+test('verification: resend waits 30s, issues a new code and the old one stops working', async () => {
+  const s1 = await srv.api('/auth/register', { method: 'POST', body: validUser() });
+  const id = s1.data.registrationId;
+  const tooSoon = await srv.api('/auth/register/resend', { method: 'POST', body: { registrationId: id, channel: 'mobile' } });
+  assert.equal(tooSoon.status, 429);
+  assert.ok(tooSoon.data.retryInSeconds > 0);
+  srv.sql('UPDATE pending_registrations SET last_mobile_sent_at = 0, last_email_sent_at = 0 WHERE id = ?', id);
+  const again = await srv.api('/auth/register/resend', { method: 'POST', body: { registrationId: id, channel: 'mobile' } });
+  assert.equal(again.status, 200);
+  assert.match(again.data.devMobileOtp, /^\d{6}$/);
+  assert.equal((await srv.api('/auth/register/resend', { method: 'POST', body: { registrationId: id, channel: 'fax' } })).status, 400);
+  if(again.data.devMobileOtp !== s1.data.devMobileOtp){
+    const old = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: id, emailCode: s1.data.devEmailOtp, mobileCode: s1.data.devMobileOtp } });
+    assert.equal(old.status, 400, 'the replaced mobile code no longer works');
+  }
+  const ok = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: id, emailCode: s1.data.devEmailOtp, mobileCode: again.data.devMobileOtp } });
+  assert.equal(ok.status, 201);
+});
+
+test('verification: details taken by someone else meanwhile are caught at the last step', async () => {
+  const u = validUser();
+  const first = await srv.api('/auth/register', { method: 'POST', body: u });
+  const second = await srv.api('/auth/register', { method: 'POST', body: { ...validUser(), username: u.username } });
+  assert.equal(second.status, 201, 'nobody owns the username yet');
+  const done = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: second.data.registrationId, emailCode: second.data.devEmailOtp, mobileCode: second.data.devMobileOtp } });
+  assert.equal(done.status, 201);
+  const late = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId: first.data.registrationId, emailCode: first.data.devEmailOtp, mobileCode: first.data.devMobileOtp } });
+  assert.equal(late.status, 409);
+  assert.ok(late.data.fields.username);
+  assert.equal(late.data.restart, true);
+});
+
+test('verification: unknown or malformed sign-up ids are refused', async () => {
+  for(const registrationId of [undefined, '', 'x', 'a'.repeat(300), 'abcdefghijklmnopqrstuvwxyz0123456789']){
+    const r = await srv.api('/auth/register/verify', { method: 'POST', body: { registrationId, emailCode: '123456', mobileCode: '123456' } });
+    assert.equal(r.status, 400);
+  }
 });
 
 test('forgot-password does not reveal whether an email exists', async () => {
@@ -67,7 +145,7 @@ test('forgot-password does not reveal whether an email exists', async () => {
 });
 
 test('login with wrong password or unknown user gives the same 401', async () => {
-  const u = validUser(); await srv.api('/auth/register', { method: 'POST', body: u });
+  const u = validUser(); await srv.signUp(u);
   const a = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: 'Wrong#Pass1' } });
   const b = await srv.api('/auth/login', { method: 'POST', body: { username: 'no_such_user', password: 'Wrong#Pass1' } });
   assert.equal(a.status, 401); assert.equal(b.status, 401); assert.equal(a.data.error, b.data.error);

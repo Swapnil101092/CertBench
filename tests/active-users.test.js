@@ -6,13 +6,12 @@ const { startServer, validUser } = require('./helpers');
 let srv, adminToken;
 async function login(u){
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
-  const v = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } });
-  return v.data.token;
+  return l.data.token;
 }
 test.before(async () => {
   srv = await startServer();
   const a = validUser({ username: 'boss_user' });
-  await srv.api('/auth/register', { method: 'POST', body: a });
+  await srv.signUp(a);
   srv.sql('UPDATE users SET is_admin = 1 WHERE username = ?', 'boss_user');
   adminToken = await login(a);
 });
@@ -25,7 +24,7 @@ test('active users: counts signed-in requests in the last 15 minutes only', asyn
   assert.equal(r.data.activeWindowMinutes, 15);
 
   const s = validUser({ username: 'student_one' });
-  await srv.api('/auth/register', { method: 'POST', body: s });
+  await srv.signUp(s);
   const t = await login(s);
   await srv.api('/auth/me', { token: t });
   r = await srv.api('/admin/overview', { token: adminToken });
@@ -41,7 +40,7 @@ test('active users: counts signed-in requests in the last 15 minutes only', asyn
 
 test('active users: "sign out everywhere" drops the user from the count', async () => {
   const s = validUser({ username: 'student_two' });
-  await srv.api('/auth/register', { method: 'POST', body: s });
+  await srv.signUp(s);
   const t = await login(s);
   await srv.api('/auth/me', { token: t });
   const before = (await srv.api('/admin/overview', { token: adminToken })).data.counts.activeUsers;
