@@ -10,6 +10,7 @@ const paymentRoutes = require('./src/routes/payments');
 const adminRoutes = require('./src/routes/admin');
 const settingsRoutes = require('./src/routes/settings');
 const reviewRoutes = require('./src/routes/reviews');
+const visitRoutes = require('./src/routes/visits');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -40,6 +41,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/visits', visitRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
