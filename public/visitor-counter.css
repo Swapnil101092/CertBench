@@ -1,0 +1,13 @@
+/* Home page visitor counter card (see visitor-counter.js). Uses the site's theme tokens. */
+.visitor-section{ max-width:calc(1200px + 2 * clamp(1rem,4vw,3rem)); margin:0 auto; width:100%; padding:clamp(3rem,7vw,5rem) clamp(1rem,4vw,3rem) clamp(1rem,3vw,2rem); display:flex; justify-content:center; }
+.visitor-card{
+  width:100%; max-width:440px; padding:1.4rem 1.25rem 1.5rem; border-radius:var(--radius-lg);
+  background:var(--panel); border:1px solid var(--panel-border); box-shadow:var(--shadow-md);
+  display:flex; flex-direction:column; align-items:center; gap:1.1rem; text-align:center;
+}
+.vc-icon{ display:flex; align-items:center; justify-content:center; width:4.5rem; height:3rem; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+.vc-inner{ width:100%; max-width:340px; padding:1.1rem 1rem 1.25rem; border-radius:var(--radius); background:var(--panel-2); border:1px solid var(--hairline); display:flex; flex-direction:column; gap:1.15rem; }
+.vc-row{ display:flex; flex-direction:column; align-items:center; gap:.35rem; }
+.vc-label{ display:flex; align-items:center; gap:.6rem; font-family:var(--display); font-weight:700; font-size:1.05rem; color:var(--accent-warm); }
+.vc-label svg{ color:var(--text); flex:none; }
+.vc-num{ font-family:var(--display); font-weight:600; font-size:clamp(1.9rem,6vw,2.4rem); line-height:1.1; color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:.01em; }
