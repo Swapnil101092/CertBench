@@ -4,6 +4,7 @@
 // personal is kept. Daily totals are kept forever so the all-time number can be shown.
 const crypto = require('crypto');
 const db = require('./db');
+const settings = require('./settings');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS visit_daily (
@@ -45,9 +46,21 @@ function record(id){
   }
 }
 
+// Whether the admin has the counter switched on (Admin panel > Site settings).
+function enabled(){ return settings.getPublic().visitorCounter.enabled; }
+
+// What the home page gets. Visits are still counted while the card is hidden, so the
+// numbers are complete when it is switched back on; they just are not handed out.
 function counts(){
+  if(!enabled()) return { enabled: false };
   const t = getDay.get(todayIST());
-  return { total: Number(getTotal.get().n), today: t ? Number(t.visitors) : 0 };
+  return { enabled: true, total: Number(getTotal.get().n), today: t ? Number(t.visitors) : 0 };
 }
 
-module.exports = { record, counts, validId, todayIST };
+// Always the real numbers, for the admin panel.
+function adminCounts(){
+  const t = getDay.get(todayIST());
+  return { enabled: enabled(), total: Number(getTotal.get().n), today: t ? Number(t.visitors) : 0 };
+}
+
+module.exports = { record, counts, adminCounts, validId, todayIST };

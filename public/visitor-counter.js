@@ -1,6 +1,7 @@
 // Home page visitor counter: "Total visitors" and "Today's visitors".
 // Each browser gets an anonymous random ID (kept in localStorage) so the server
-// can count it once per day. The card sits just above the home page footer.
+// can count it once per day. The card sits just above the home page footer, and only
+// appears when the admin has it switched on (Admin panel > Site settings).
 (function(){
   var ID_KEY = 'certbench-visitor-id';
   var counts = null;
@@ -46,7 +47,9 @@
   }
 
   // The app re-draws the home page as you navigate, so put the card back whenever it is missing.
+  // It is only shown once the server confirms the admin has it switched on.
   function place(){
+    if(!counts || !counts.enabled) return;
     var wrap = document.querySelector('.landing-wrap');
     if(!wrap || wrap.querySelector('.visitor-section')) return;
     var foot = wrap.querySelector(':scope > .site-foot');
@@ -57,7 +60,7 @@
     fetch('/api/visits', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: visitorId() }) })
       .then(function(r){ return r.ok ? r : fetch('/api/visits'); })   // rate-limited etc.: still show the numbers
       .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(c){ if(c && typeof c.total === 'number'){ counts = c; refresh(); } })
+      .then(function(c){ if(c && (c.enabled === false || typeof c.total === 'number')){ counts = c; refresh(); place(); } })
       .catch(function(){});
   }
 
