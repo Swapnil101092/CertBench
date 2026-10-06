@@ -8,13 +8,12 @@ let srv, admin;
 // because only people who have completed an exam can leave a review.
 async function signUp(over, noAttempt){
   const u = validUser(over);
-  await srv.api('/auth/register', { method: 'POST', body: u });
+  await srv.signUp(u);
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } });
-  const v = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } });
   if(!noAttempt){
     srv.sql("INSERT INTO attempts (user_id, exam_id, finished_at, correct_count, total_count, score_pct, passed) SELECT id, (SELECT MIN(id) FROM exams), datetime('now'), 25, 30, 83.3, 1 FROM users WHERE username = ?", u.username);
   }
-  return v.data.token;
+  return l.data.token;
 }
 test.before(async () => {
   srv = await startServer();

@@ -40,10 +40,10 @@ test('visits: rejects missing or malformed ids', async () => {
 
 test('visits: admin can hide the counter; visits are still counted while hidden', async () => {
   const a = validUser({ username: 'visit_admin' });
-  await srv.api('/auth/register', { method: 'POST', body: a });
+  await srv.signUp(a);
   srv.sql('UPDATE users SET is_admin = 1 WHERE username = ?', 'visit_admin');
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: a.username, password: a.password } });
-  const token = (await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } })).data.token;
+  const token = l.data.token;
 
   let r = await srv.api('/admin/settings', { method: 'PUT', token, body: { visitorCounterEnabled: false } });
   assert.equal(r.status, 200);

@@ -12,7 +12,7 @@ async function startServer(){
     PORT: String(port),
     DB_PATH: path.join(dir, 'test.db'),
     JWT_SECRET: 'test-secret-' + Math.random(),
-    // No email provider: the API returns devOtp so the full login flow can be tested.
+    // No email / SMS provider: the API hands back the codes so sign-up and password reset can be tested.
     EMAIL_USER: '', EMAIL_PASS: '', BREVO_API_KEY: '', ADMIN_EMAILS: ''
   };
   let proc, log = '';
@@ -48,7 +48,14 @@ async function startServer(){
     const { DatabaseSync } = require('node:sqlite');
     const d = new DatabaseSync(env.DB_PATH); try{ return d.prepare(statement).run(...params); } finally { d.close(); }
   }
-  return { api, stop, restart, base, sql, dbPath: env.DB_PATH, log: () => log };
+  // Sign up the way the website does: send the details, then confirm the email + mobile codes
+  // (with no email / SMS provider configured, the server hands the codes back for testing).
+  async function signUp(body){
+    const r = await api('/auth/register', { method: 'POST', body });
+    if(r.status !== 201) return r;
+    return api('/auth/register/verify', { method: 'POST', body: { registrationId: r.data.registrationId, emailCode: r.data.devEmailOtp, mobileCode: r.data.devMobileOtp } });
+  }
+  return { api, signUp, stop, restart, base, sql, dbPath: env.DB_PATH, log: () => log };
 }
 
 let n = 0;

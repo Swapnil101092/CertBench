@@ -7,11 +7,10 @@ let srv, token;
 test.before(async () => {
   srv = await startServer();
   const a = validUser({ username: 'boss_user' });
-  await srv.api('/auth/register', { method: 'POST', body: a });
+  await srv.signUp(a);
   srv.sql('UPDATE users SET is_admin = 1 WHERE username = ?', 'boss_user');
   const l = await srv.api('/auth/login', { method: 'POST', body: { username: a.username, password: a.password } });
-  const v = await srv.api('/auth/verify-otp', { method: 'POST', body: { pendingToken: l.data.pendingToken, code: l.data.devOtp } });
-  token = v.data.token;
+  token = l.data.token;
 });
 test.after(() => srv && srv.stop());
 
