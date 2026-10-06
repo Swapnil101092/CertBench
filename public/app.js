@@ -3,11 +3,11 @@
 const API = '/api';
 
 let state = {
-  screen: 'loading', // loading | landing | login | register | otp | forgot | reset | select | sets | exam | results | history
-  loginError: '', loginNotice: '', registerError: '', otpError: '',
+  screen: 'loading', // loading | landing | login | register | verify-reg | forgot | reset | select | sets | exam | results | history
+  loginError: '', loginNotice: '', registerError: '',
+  regVerify: null,   // sign-up waiting for its email / mobile codes
   forgotError: '', forgotNotice: '', resetToken: null, resetEmail: '', resetError: '', resetOtp: null,
   token: null, currentUser: null,
-  pendingToken: null, emailMasked: '', otpExpiresAt: null, otpResendAt: null,
   exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null, topReviews: null, myReview: undefined,
   enrollBusySlug: null,
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
@@ -46,6 +46,7 @@ async function api(path, opts){
     const err = new Error((data && data.error) || 'Request failed.');
     err.status = res.status;
     if(data && data.fields) err.fields = data.fields;
+    err.data = data;
     throw err;
   }
   return data;
@@ -1003,15 +1004,7 @@ function renderLogin(){
     state.busy = true; state.loginError = ''; state.loginNotice = ''; render();
     try{
       const data = await api('/auth/login', { method:'POST', body:{ username:u, password:p } });
-      state.busy = false;
-      state.pendingToken = data.pendingToken;
-      state.emailMasked = data.emailMasked;
-      state.otpExpiresAt = Date.now() + data.expiresInSeconds*1000;
-      state.otpResendAt = Date.now() + 30*1000;
-      state.otpError = '';
-      state.devOtp = data.devOtp || null;
-      state.screen = 'otp';
-      render();
+      await finishSignIn(data);
     }catch(err){
       state.busy = false;
       state.loginError = err.message || 'Sign in failed.';
@@ -1118,9 +1111,9 @@ function renderRegister(){
   const wrap = el('div',{class:'login-wrap'});
   const formCol = el('div',{class:'auth-form-col'});
   const card = el('div',{class:'login-card'},[
-    el('div',{class:'login-eyebrow'},['Create account']),
+    el('div',{class:'login-eyebrow'},['Create account · Step 1 of 2']),
     el('h1',{},['Register for CertBench']),
-    el('p',{class:'sub'},["We’ll email a one-time code to this address each time you sign in."]),
+    el('p',{class:'sub'},["Next, we’ll send a code to your email and mobile to confirm they’re yours."]),
   ]);
 
   // Typed values and per-field errors live in state so a re-render (e.g. after a server error)
@@ -1215,7 +1208,7 @@ function renderRegister(){
 
   const errorDiv = el('div',{class:'login-error', id:'reg-form-error', role:'alert'},[state.registerError]);
   form.appendChild(errorDiv);
-  const submitBtn = el('button',{class:'btn btn-primary', type:'submit'},[state.busy ? 'Creating…' : 'Create account']);
+  const submitBtn = el('button',{class:'btn btn-primary', type:'submit'},[state.busy ? 'Sending codes…' : 'Continue']);
   if(state.busy) submitBtn.setAttribute('disabled','disabled');
   form.appendChild(submitBtn);
 
@@ -1245,13 +1238,17 @@ function renderRegister(){
 
     state.busy = true; state.registerError=''; render();
     try{
-      await api('/auth/register', { method:'POST', body });
+      const data = await api('/auth/register', { method:'POST', body });
       state.busy = false;
       state.registerError = '';
-      state.regDraft = null; // clear the form (and the password) once the account exists
-      state.loginError = '';
-      state.loginNotice = 'Account created. Sign in with your new username and password.';
-      state.screen = 'login';
+      const now = Date.now();
+      state.regVerify = {
+        id: data.registrationId, emailMasked: data.emailMasked, mobileMasked: data.mobileMasked,
+        needsMobile: !!data.needsMobileCode, devEmailOtp: data.devEmailOtp || null, devMobileOtp: data.devMobileOtp || null,
+        resendAt: { email: now + data.resendInSeconds*1000, mobile: now + data.resendInSeconds*1000 },
+        error: '', fieldErrors: {}, notice: ''
+      };
+      state.screen = 'verify-reg';
       render();
     }catch(err){
       state.busy = false;
@@ -1277,87 +1274,126 @@ function renderRegister(){
   return wrap;
 }
 
-function renderOtp(){
+// Signed in (after sign-up or sign-in): keep the token and open the exam list.
+async function finishSignIn(data){
+  state.token = data.token;
+  state.currentUser = data.user;
+  safeSetLS('certbench-token', state.token);
+  state.busy = false;
+  state.regDraft = null; state.regVerify = null;   // forget the form (and the password)
+  state.loginError = ''; state.loginNotice = '';
+  await loadExams();
+  state.screen = 'select';
+  render();
+}
+
+// Sign-up step 2: enter the codes sent to the email and mobile number.
+function renderRegVerify(){
+  const v = state.regVerify;
+  if(!v){ state.screen = 'register'; return renderRegister(); }
   const wrap = el('div',{class:'login-wrap'});
   const formCol = el('div',{class:'auth-form-col'});
   const card = el('div',{class:'login-card'},[
-    el('div',{class:'login-eyebrow'},['Verify it’s you']),
-    el('h1',{},['Enter your one-time code']),
-    el('p',{class:'sub'},[`We sent a 6-digit code to ${state.emailMasked}.`]),
+    el('div',{class:'login-eyebrow'},['Create account · Step 2 of 2']),
+    el('h1',{},[v.needsMobile ? 'Verify your email and mobile' : 'Verify your email']),
+    el('p',{class:'sub'},[ v.needsMobile
+      ? `We sent a 6-digit code to ${v.emailMasked} and another to ${v.mobileMasked}. Enter both to finish creating your account.`
+      : `We sent a 6-digit code to ${v.emailMasked}. Enter it to finish creating your account.` ])
   ]);
 
-  if(state.devOtp){
+  if(v.devEmailOtp || v.devMobileOtp){
     card.appendChild(el('div',{class:'otp-demo'},[
-      el('div',{class:'otp-demo-label'},['No email provider is configured on this server']),
-      el('div',{class:'otp-demo-sub'},['Set EMAIL_USER / EMAIL_PASS (a Gmail address + app password) on the server to send real emails. Until then, here’s the code so you can keep testing:']),
-      el('div',{class:'otp-demo-code'},[state.devOtp])
+      el('div',{class:'otp-demo-label'},['No email / SMS provider is configured on this server']),
+      el('div',{class:'otp-demo-sub'},['Codes are shown here so you can keep testing. Set up Brevo email and SMS on the server to send real ones.']),
+      v.devEmailOtp ? el('div',{class:'otp-demo-sub'},['Email code']) : null,
+      v.devEmailOtp ? el('div',{class:'otp-demo-code', id:'dev-email-code'},[v.devEmailOtp]) : null,
+      v.devMobileOtp ? el('div',{class:'otp-demo-sub', style:'margin-top:.7rem'},['Mobile code']) : null,
+      v.devMobileOtp ? el('div',{class:'otp-demo-code', id:'dev-mobile-code'},[v.devMobileOtp]) : null
     ]));
   }
 
-  const form = el('div',{});
-  const otpField = el('div',{class:'field'},[ el('label',{for:'otp-input'},['One-time code']), el('input',{id:'otp-input', type:'text', inputmode:'numeric', maxlength:'6', autocomplete:'one-time-code'}) ]);
-  form.appendChild(otpField);
-  const errorDiv = el('div',{class:'login-error'},[state.otpError]);
-  form.appendChild(errorDiv);
-  const verifyBtn = el('button',{class:'btn btn-primary', type:'button'},[state.busy ? 'Verifying…' : 'Verify and sign in']);
-  if(state.busy) verifyBtn.setAttribute('disabled','disabled');
-  form.appendChild(verifyBtn);
+  const form = el('form',{novalidate:'novalidate'});
+  function codeField(key, id, label, channel){
+    const input = el('input',{id, name:key, type:'text', inputmode:'numeric', maxlength:'6', autocomplete: channel === 'email' ? 'off' : 'one-time-code', 'aria-describedby': id + '-error'});
+    input.value = (v.typed && v.typed[key]) || '';
+    input.addEventListener('input', ()=>{ input.value = input.value.replace(/\D/g,'').slice(0,6); v.typed = v.typed || {}; v.typed[key] = input.value; });
+    const err = el('div',{class:'field-error', id: id + '-error', role:'alert'},[ (v.fieldErrors && v.fieldErrors[key]) || '' ]);
+    const left = Math.ceil(((v.resendAt[channel]||0) - Date.now())/1000);
+    const resend = el('button',{class:'link-btn reg-resend-btn', type:'button', 'data-channel':channel, disabled: left > 0 ? 'disabled' : undefined},
+      [ left > 0 ? `Resend in ${left}s` : (channel === 'email' ? 'Resend email code' : 'Resend SMS code') ]);
+    resend.addEventListener('click', ()=> resendCode(channel));
+    const field = el('div',{class:'field' + ((v.fieldErrors && v.fieldErrors[key]) ? ' has-error' : '')},[
+      el('label',{for:id},[label]), input, err,
+      el('div',{class:'field-hint'},[resend])
+    ]);
+    return field;
+  }
+  form.appendChild(codeField('emailCode', 'reg-email-code', 'Email code', 'email'));
+  if(v.needsMobile) form.appendChild(codeField('mobileCode', 'reg-mobile-code', 'Mobile (SMS) code', 'mobile'));
 
-  async function attemptVerify(){
+  if(v.notice) form.appendChild(el('div',{class:'login-notice'},[v.notice]));
+  form.appendChild(el('div',{class:'login-error', role:'alert'},[v.error || '']));
+  const submitBtn = el('button',{class:'btn btn-primary', type:'submit'},[state.busy ? 'Verifying…' : 'Verify and create account']);
+  if(state.busy) submitBtn.setAttribute('disabled','disabled');
+  form.appendChild(submitBtn);
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
     if(state.busy) return;
-    const code = document.getElementById('otp-input').value.trim();
-    if(!code){ state.otpError = 'Enter the 6-digit code.'; render(); return; }
-    state.busy = true; state.otpError=''; render();
+    const emailCode = (document.getElementById('reg-email-code').value || '').trim();
+    const mobileEl = document.getElementById('reg-mobile-code');
+    const mobileCode = mobileEl ? mobileEl.value.trim() : '';
+    const fe = {};
+    if(!/^\d{6}$/.test(emailCode)) fe.emailCode = 'Enter the 6-digit code sent to your email.';
+    if(v.needsMobile && !/^\d{6}$/.test(mobileCode)) fe.mobileCode = 'Enter the 6-digit code sent to your mobile.';
+    v.fieldErrors = fe; v.notice = '';
+    if(Object.keys(fe).length){ v.error = fe.emailCode || fe.mobileCode; render(); return; }
+    state.busy = true; v.error = ''; render();
     try{
-      const data = await api('/auth/verify-otp', { method:'POST', body:{ pendingToken: state.pendingToken, code } });
+      const data = await api('/auth/register/verify', { method:'POST', body:{ registrationId: v.id, emailCode, mobileCode } });
+      await finishSignIn(data);
+    }catch(err){
       state.busy = false;
-      state.token = data.token;
-      state.currentUser = data.user;
-      safeSetLS('certbench-token', state.token);
-      state.pendingToken = null; state.devOtp = null;
-      await loadExams();
-      state.screen = 'select';
+      if(err.data && err.data.restart){
+        // Expired, too many tries, or details taken meanwhile: back to the form, which still has what they typed.
+        state.regVerify = null;
+        if(err.fields && state.regDraft) Object.keys(err.fields).forEach(k=>{ state.regDraft.errors[k] = err.fields[k]; state.regDraft.touched[k] = true; });
+        state.registerError = err.message || 'Please fill in the form again.';
+        state.screen = 'register';
+        render(); return;
+      }
+      v.fieldErrors = err.fields || {};
+      v.error = err.message || 'Verification failed.';
+      render();
+    }
+  });
+
+  async function resendCode(channel){
+    if(state.busy || Date.now() < (v.resendAt[channel]||0)) return;
+    state.busy = true; v.error = ''; v.notice = ''; render();
+    try{
+      const data = await api('/auth/register/resend', { method:'POST', body:{ registrationId: v.id, channel } });
+      state.busy = false;
+      v.resendAt[channel] = Date.now() + data.resendInSeconds*1000;
+      if(data.devEmailOtp) v.devEmailOtp = data.devEmailOtp;
+      if(data.devMobileOtp) v.devMobileOtp = data.devMobileOtp;
+      v.notice = channel === 'email' ? `A new code was sent to ${v.emailMasked}.` : `A new code was sent to ${v.mobileMasked}.`;
       render();
     }catch(err){
       state.busy = false;
-      state.otpError = err.message || 'Verification failed.';
+      if(err.data && err.data.restart){ state.regVerify = null; state.registerError = err.message; state.screen = 'register'; render(); return; }
+      if(err.data && err.data.retryInSeconds) v.resendAt[channel] = Date.now() + err.data.retryInSeconds*1000;
+      v.error = err.message || 'Could not resend the code.';
       render();
     }
   }
 
-  verifyBtn.addEventListener('click', attemptVerify);
-  otpField.querySelector('input').addEventListener('keydown', e=>{ if(e.key==='Enter') attemptVerify(); });
-
   card.appendChild(form);
-
-  const resendRow = el('p',{class:'auth-switch'},[]);
-  const canResend = Date.now() >= (state.otpResendAt||0);
-  const resendLink = el('button',{class:'link-btn otp-resend-btn', type:'button', disabled: canResend?undefined:'disabled'},[canResend ? 'Resend code' : 'Resend available shortly']);
-  resendLink.addEventListener('click', async ()=>{
-    if(Date.now() < (state.otpResendAt||0) || state.busy) return;
-    state.busy = true; render();
-    try{
-      const data = await api('/auth/resend-otp', { method:'POST', body:{ pendingToken: state.pendingToken } });
-      state.busy = false;
-      state.otpExpiresAt = Date.now() + data.expiresInSeconds*1000;
-      state.otpResendAt = Date.now() + 30*1000;
-      state.devOtp = data.devOtp || null;
-      state.otpError = '';
-      render();
-    }catch(err){
-      state.busy = false;
-      state.otpError = err.message || 'Could not resend the code.';
-      render();
-    }
-  });
-  resendRow.appendChild(resendLink);
-  card.appendChild(resendRow);
-
-  const cancelRow = el('p',{class:'auth-switch'},['Wrong account? ']);
-  const cancelLink = el('button',{class:'link-btn', type:'button'},['Back to sign in']);
-  cancelLink.addEventListener('click', ()=>{ state.pendingToken=null; state.devOtp=null; state.otpError=''; state.loginError=''; state.screen='login'; render(); });
-  cancelRow.appendChild(cancelLink);
-  card.appendChild(cancelRow);
+  const backRow = el('p',{class:'auth-switch'},['Typed something wrong? ']);
+  const backLink = el('button',{class:'link-btn', type:'button'},['Change your details']);
+  backLink.addEventListener('click', ()=>{ state.regVerify = null; state.registerError = ''; state.screen = 'register'; render(); });
+  backRow.appendChild(backLink);
+  card.appendChild(backRow);
 
   formCol.appendChild(card);
   wrap.appendChild(formCol);
@@ -2285,13 +2321,13 @@ function signOut(){
   clearInterval(state.timerHandle);
   safeRemoveLS('certbench-token');
   state = Object.assign({}, state, {
-    screen:'login', token:null, currentUser:null, pendingToken:null,
+    screen:'login', token:null, currentUser:null,
     setsExamSlug:null, setsExamMeta:null, availableSets:[],
     attemptId:null, examMeta:null, examSetNumber:null, questions:[], current:0, answers:{},
     visitedIds:{}, skippedIds:{},
     results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined, canReview:false,
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
-    loginError:'', loginNotice:'', otpError:'', registerError:'', regDraft:null
+    loginError:'', loginNotice:'', registerError:'', regDraft:null, regVerify:null
   });
   render();
   loadLandingExams();
@@ -2309,7 +2345,7 @@ function render(){
   else if(state.screen === 'landing') main.appendChild(renderLanding());
   else if(state.screen === 'login') main.appendChild(renderLogin());
   else if(state.screen === 'register') main.appendChild(renderRegister());
-  else if(state.screen === 'otp') main.appendChild(renderOtp());
+  else if(state.screen === 'verify-reg') main.appendChild(renderRegVerify());
   else if(state.screen === 'forgot') main.appendChild(renderForgot());
   else if(state.screen === 'reset') main.appendChild(renderReset());
   else if(state.screen === 'select') main.appendChild(renderSelect());
@@ -2329,15 +2365,20 @@ function render(){
   else if(state.screen === 'register'){ const f=document.getElementById('reg-name'); if(f) f.focus(); }
   else if(state.screen === 'forgot'){ const f=document.getElementById('forgot-email'); if(f) f.focus(); }
   else if(state.screen === 'reset'){ const f=document.getElementById('reset-code'); if(f) f.focus(); }
-  else if(state.screen === 'otp'){
-    const f=document.getElementById('otp-input'); if(f) f.focus();
+  else if(state.screen === 'verify-reg'){
+    const v = state.regVerify || {};
+    const bad = v.fieldErrors && (v.fieldErrors.emailCode ? 'reg-email-code' : v.fieldErrors.mobileCode ? 'reg-mobile-code' : null);
+    const f = document.getElementById(bad || 'reg-email-code'); if(f) f.focus();
+    // Count down the "Resend in 30s" buttons without redrawing the inputs.
     clearInterval(state.otpTickHandle);
     state.otpTickHandle = setInterval(function(){
-      if(state.screen !== 'otp'){ clearInterval(state.otpTickHandle); return; }
-      const btn = document.querySelector('.otp-resend-btn');
-      if(btn && Date.now() >= (state.otpResendAt||0) && btn.textContent.trim() !== 'Resend code'){
-        render();
-      }
+      if(state.screen !== 'verify-reg' || !state.regVerify){ clearInterval(state.otpTickHandle); return; }
+      document.querySelectorAll('.reg-resend-btn').forEach(function(btn){
+        const ch = btn.getAttribute('data-channel');
+        const left = Math.ceil(((state.regVerify.resendAt[ch]||0) - Date.now())/1000);
+        if(left > 0){ btn.textContent = 'Resend in ' + left + 's'; btn.setAttribute('disabled','disabled'); }
+        else if(btn.hasAttribute('disabled') && !state.busy){ btn.removeAttribute('disabled'); btn.textContent = ch === 'email' ? 'Resend email code' : 'Resend SMS code'; }
+      });
     }, 1000);
   } else {
     clearInterval(state.otpTickHandle);
