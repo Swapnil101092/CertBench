@@ -14,20 +14,8 @@ function signSessionToken(user){
   );
 }
 
-function signPendingToken(user){
-  // Short-lived token issued right after password check, before OTP is
-  // verified. It can only be used against the verify-otp/resend-otp
-  // endpoints, never to access protected resources.
-  return jwt.sign(
-    { sub: user.id, purpose: 'otp-pending' },
-    JWT_SECRET,
-    { expiresIn: '10m' }
-  );
-}
-
 function signResetToken(user){
-  // Separate purpose from otp-pending so a password-reset code can never
-  // be used to complete a normal login, or vice versa.
+  // Its own purpose, so this short-lived token only works on the reset-password endpoint.
   return jwt.sign(
     { sub: user.id, purpose: 'password-reset-pending' },
     JWT_SECRET,
@@ -89,9 +77,9 @@ function optionalAuth(req, res, next){
 //   1. `npm run make-admin -- <username>` sets a flag in the database (needs a shell on the server).
 //   2. The ADMIN_EMAILS environment variable (comma-separated), set in your host's dashboard. This is
 //      for hosts where you can't run commands on the server. It is ONLY honoured when a real email
-//      service is configured: signing in then needs the code emailed to that address, so nobody else
-//      can use it. (Without email, the site shows login codes on screen, so anyone could register
-//      that address and sign in as it.)
+//      service is configured AND the account verified that email with a code sent to it at sign-up
+//      (or a password reset), so nobody else can claim the address. (Without email, the site shows
+//      sign-up codes on screen, so anyone could register that address.)
 function adminEmailList(){
   return String(process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 }
@@ -101,6 +89,8 @@ function adminEmailsActive(){
 function isAdminUser(u){
   if(!u) return false;
   if(u.is_admin) return true;
+  // ADMIN_EMAILS only counts for an account that has proved it owns that email (by a code sent to it).
+  if(u.email_verified === 0) return false;
   return adminEmailsActive() && adminEmailList().includes(String(u.email || '').trim().toLowerCase());
 }
 
@@ -108,7 +98,7 @@ function isAdminUser(u){
 // the login token, so removing someone's access takes effect immediately.
 function requireAdmin(req, res, next){
   requireAuth(req, res, () => {
-    const u = db.prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?').get(req.userId);
+    const u = db.prepare('SELECT id, username, email, email_verified, is_admin FROM users WHERE id = ?').get(req.userId);
     if(!isAdminUser(u)){
       return res.status(403).json({ error: 'Admin access required.' });
     }
@@ -117,4 +107,4 @@ function requireAdmin(req, res, next){
   });
 }
 
-module.exports = { ACTIVE_WINDOW_MINUTES, countActiveUsers, signSessionToken, signPendingToken, signResetToken, verifyToken, requireAuth, requireAdmin, optionalAuth, isAdminUser, adminEmailList, adminEmailsActive };
+module.exports = { ACTIVE_WINDOW_MINUTES, countActiveUsers, signSessionToken, signResetToken, verifyToken, requireAuth, requireAdmin, optionalAuth, isAdminUser, adminEmailList, adminEmailsActive };
