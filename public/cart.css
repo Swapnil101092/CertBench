@@ -1,0 +1,68 @@
+/* Cart: buy several certificates in one payment (see the cart section of app.js). */
+.cart-btn{ display:inline-flex; align-items:center; gap:.4em; }
+.cart-btn.on{ border-color:var(--accent); color:var(--accent); }
+.cart-count{ min-width:1.35em; height:1.35em; padding:0 .35em; border-radius:999px; background:var(--accent); color:var(--on-accent); font-size:.72rem; font-weight:700; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+
+.cert-card .cart-toggle{ display:flex; align-items:center; justify-content:center; gap:.45em; margin-top:.55rem; }
+.cert-card .cart-toggle.added{ border-color:color-mix(in srgb, var(--success) 45%, var(--panel-border)); color:var(--success); background:var(--success-soft); }
+
+.cart-bar{
+  position:sticky; bottom:1rem; z-index:20; margin:1.75rem auto 0; max-width:720px;
+  display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;
+  padding:.85rem 1rem .85rem 1.15rem; border-radius:var(--radius-lg);
+  background:var(--panel); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--panel-border)); box-shadow:var(--shadow-lg);
+}
+.cart-bar-text{ display:flex; align-items:center; gap:.45em; flex-wrap:wrap; color:var(--text-dim); font-size:.95rem; }
+.cart-bar-text svg{ color:var(--accent); }
+.cart-bar-text b{ color:var(--text); }
+.cart-bar .btn{ width:auto; }
+
+.cart-notice{ margin-bottom:1.25rem; }
+.cart-layout{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:1.5rem; align-items:start; }
+.cart-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.75rem; }
+.cart-item{
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:1rem; align-items:center;
+  padding:1rem 1.1rem; border-radius:var(--radius); background:var(--panel); border:1px solid var(--panel-border);
+}
+.cart-badge{ flex:none; }
+.cart-item-name{ font-weight:600; color:var(--text); line-height:1.35; }
+.cart-item-meta{ font-size:.82rem; color:var(--text-dim); margin-top:.2rem; }
+.cart-remove{ margin-top:.35rem; font-size:.82rem; padding:0; }
+.cart-item-price{ font-family:var(--display); font-weight:700; font-size:1.05rem; color:var(--text); white-space:nowrap; }
+
+.cart-summary{
+  position:sticky; top:5rem; padding:1.25rem; border-radius:var(--radius-lg);
+  background:var(--panel); border:1px solid var(--panel-border); box-shadow:var(--shadow-md);
+  display:flex; flex-direction:column; gap:.75rem;
+}
+.cart-summary h2{ font-size:1.05rem; margin:0; }
+.cart-sum-row{ display:flex; justify-content:space-between; gap:1rem; color:var(--text-dim); font-size:.92rem; }
+.cart-sum-total{ padding-top:.75rem; border-top:1px solid var(--hairline); color:var(--text); font-size:1.05rem; }
+.cart-sum-total b{ font-family:var(--display); font-size:1.3rem; }
+.cart-pay{ width:100%; }
+.cart-sum-note{ margin:0; font-size:.78rem; color:var(--text-faint); text-align:center; }
+.cart-sum-clear{ margin:0; text-align:center; font-size:.85rem; }
+
+.cart-empty{ text-align:center; padding:3rem 1.25rem; border-radius:var(--radius-lg); background:var(--panel); border:1px dashed var(--panel-border); }
+.cart-empty-icon{ width:3.5rem; height:3.5rem; margin:0 auto 1rem; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--accent-soft); color:var(--accent); }
+.cart-empty h2{ margin:0 0 .4rem; font-size:1.2rem; }
+.cart-empty p{ margin:0 0 1.25rem; color:var(--text-dim); }
+.cart-empty .btn{ width:auto; }
+
+@media (max-width: 820px){
+  .cart-layout{ grid-template-columns:1fr; }
+  .cart-summary{ position:static; }
+}
+@media (max-width: 480px){
+  .cart-item{ grid-template-columns:minmax(0,1fr) auto; }
+  .cart-badge{ display:none; }
+  .cart-bar{ bottom:.5rem; }
+  .cart-bar .btn{ width:100%; }
+}
+
+/* Small phones: the top bar (avatar, Cart, My results, Sign out, theme) wraps instead of running off-screen. */
+@media (max-width: 560px){
+  .topbar{ flex-wrap:wrap; row-gap:.55rem; }
+  .topbar-right{ flex-wrap:wrap; justify-content:flex-end; row-gap:.4rem; margin-left:auto; }
+  .cart-label{ display:none; }
+}

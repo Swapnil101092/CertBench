@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../auth');
 const { createOrder, verifySignature, isConfigured } = require('../payments');
+const cart = require('../cart');
 
 const router = express.Router();
 
@@ -94,6 +95,64 @@ router.post('/verify', requireAuth, (req, res) => {
   `).run(razorpay_payment_id, enrollment.id);
 
   res.json({ enrolled: true });
+});
+
+// ---- POST /api/payments/cart/checkout  (auth) — pay for several certificates in one payment ----
+// Body: { examSlugs: [...] }. Free exams in the cart are enrolled straight away; ones already owned
+// or no longer available are skipped and reported back, so the cart can be tidied up.
+router.post('/cart/checkout', requireAuth, async (req, res) => {
+  const p = cart.plan(req.userId, (req.body || {}).examSlugs);
+  if(p.error) return res.status(400).json({ error: p.error });
+
+  // Free exams: enroll now, no payment.
+  const freeSlugs = [];
+  for(const exam of p.free){
+    db.prepare(`
+      INSERT INTO enrollments (user_id, exam_id, amount_paise, gateway_order_id, status, dev_mode, paid_at)
+      VALUES (?, ?, 0, ?, 'paid', 1, datetime('now'))
+    `).run(req.userId, exam.id, 'free_' + Date.now() + '_' + req.userId + '_' + exam.id);
+    freeSlugs.push(exam.slug);
+  }
+  const summary = {
+    enrolledFree: freeSlugs,
+    alreadyOwned: p.owned.map(e => e.slug),
+    unavailable: p.unknown,
+    items: p.toBuy.map(e => ({ slug: e.slug, name: e.name, pricePaise: e.price_inr_paise })),
+    amountPaise: p.totalPaise
+  };
+  if(!p.toBuy.length) return res.json({ ...summary, nothingToPay: true });
+
+  try{
+    const receipt = `u${req.userId}_cart_${Date.now()}`;
+    const order = await createOrder(p.totalPaise, receipt);
+    const id = cart.createOrder(req.userId, order.orderId, p.toBuy, p.totalPaise, order.devMode);
+    if(order.devMode){
+      // No real gateway configured: complete straight away so the flow can be tested.
+      const enrolled = cart.markPaid(cart.findOrder(req.userId, order.orderId), null);
+      return res.json({ ...summary, devMode: true, cartOrderId: id, orderId: order.orderId, enrolled });
+    }
+    res.json({ ...summary, devMode: false, cartOrderId: id, orderId: order.orderId, currency: 'INR', keyId: order.keyId });
+  }catch(err){
+    console.error('Cart order creation failed:', err.message);
+    res.status(502).json({ error: 'Could not start payment. Please try again shortly.' });
+  }
+});
+
+// ---- POST /api/payments/cart/verify  (auth) — confirm the Razorpay payment for a cart ----
+router.post('/cart/verify', requireAuth, (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+  if(!razorpay_order_id || !razorpay_payment_id || !razorpay_signature){
+    return res.status(400).json({ error: 'Missing payment details.' });
+  }
+  const order = cart.findOrder(req.userId, razorpay_order_id);
+  if(!order) return res.status(404).json({ error: 'Order not found.' });
+  if(order.status === 'paid') return res.json({ enrolled: [], alreadyPaid: true });
+
+  if(!verifySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)){
+    cart.markFailed(order);
+    return res.status(400).json({ error: 'Payment verification failed.' });
+  }
+  res.json({ enrolled: cart.markPaid(order, razorpay_payment_id) });
 });
 
 // ---- GET /api/payments/my-enrollments  (auth) ----
