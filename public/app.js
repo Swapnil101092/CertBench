@@ -10,6 +10,7 @@ let state = {
   token: null, currentUser: null,
   exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null, topReviews: null, myReview: undefined,
   enrollBusySlug: null,
+  cart: [], cartBusy: false, cartError: '', cartNotice: '',   // certificates picked to buy together
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
   examMeta: null, examSetNumber: null, attemptId: null, questions: [], current: 0, answers: {},
   visitedIds: {}, skippedIds: {},
@@ -103,6 +104,12 @@ function topbar(){
       right.push(el('a',{class:'btn-ghost btn btn-sm', href:'/admin'},['Admin']));
     }
     if(state.screen !== 'exam' && state.screen !== 'review'){
+      const n = state.cart.length;
+      const cartBtn = el('button',{class:'btn-ghost btn btn-sm cart-btn' + (state.screen === 'cart' ? ' on' : ''), 'aria-label': 'Cart, ' + plural(n, 'certificate')},[
+        icon(ICON_CART, 16), el('span',{class:'cart-label'},['Cart']), n ? el('span',{class:'cart-count'},[String(n)]) : null
+      ]);
+      cartBtn.addEventListener('click', openCart);
+      right.push(cartBtn);
       const historyBtn = el('button',{class:'btn-ghost btn btn-sm'},['My results']);
       historyBtn.addEventListener('click', loadHistory);
       right.push(historyBtn);
@@ -249,6 +256,11 @@ const ICON_SEARCH = [
   { tag:'path',   attrs:{ d:'m20 20-3.5-3.5' } }
 ];
 const ICON_CHECK = [ { tag:'path', attrs:{ d:'m5 12 5 5L20 7' } } ];
+const ICON_CART = [
+  { tag:'circle', attrs:{ cx:'9', cy:'20', r:'1.5' } },
+  { tag:'circle', attrs:{ cx:'18', cy:'20', r:'1.5' } },
+  { tag:'path', attrs:{ d:'M2 3h3l2.7 12.4a1.5 1.5 0 0 0 1.5 1.1h8.9a1.5 1.5 0 0 0 1.5-1.1L22 7H6' } }
+];
 function icon(shapes, size){
   const s = svgIcon(shapes);
   if(size){ s.setAttribute('width', size); s.setAttribute('height', size); }
@@ -1279,6 +1291,7 @@ async function finishSignIn(data){
   state.token = data.token;
   state.currentUser = data.user;
   safeSetLS('certbench-token', state.token);
+  loadCart();
   state.busy = false;
   state.regDraft = null; state.regVerify = null;   // forget the form (and the password)
   state.loginError = ''; state.loginNotice = '';
@@ -1454,6 +1467,7 @@ function loadRazorpayScript(){
 function markExamEnrolled(slug){
   const bank = state.exams.find(b => b.slug === slug);
   if(bank) bank.enrolled = true;
+  if(inCart(slug)) removeFromCart([slug]);   // bought on its own: no longer needed in the cart
 }
 
 async function enrollInExam(slug){
@@ -1725,6 +1739,15 @@ function renderSelect(){
         else enrollInExam(bank.slug);
       });
 
+      // Paid and not bought yet: can also go in the cart, to pay for several at once.
+      let cartToggle = null;
+      if(!isEnrolled){
+        const added = inCart(bank.slug);
+        cartToggle = el('button',{class:'btn btn-ghost cart-toggle' + (added ? ' added' : ''), type:'button', 'aria-pressed': added ? 'true' : 'false'},
+          added ? [icon(ICON_CHECK, 16), 'In cart · Remove'] : [icon(ICON_CART, 16), 'Add to cart']);
+        cartToggle.addEventListener('click', ()=>{ toggleCart(bank.slug); render(); });
+      }
+
       const card = el('div',{class:'cert-card', style:`--c:${safeColor(bank.color)}`},[
         el('div',{class:'cert-top-row'},[
           el('div',{class:'cert-badge'},[bank.short_label]),
@@ -1739,7 +1762,8 @@ function renderSelect(){
           el('span',{},[el('b',{},[bank.pass_pct+'%']), 'to pass'])
         ]),
         isEnrolled && isPaid ? el('div',{class:'enrolled-tag'},['✓ Enrolled']) : null,
-        actionBtn
+        actionBtn,
+        cartToggle
       ]);
       grid.appendChild(card);
     });
@@ -1747,7 +1771,192 @@ function renderSelect(){
   }
 
   renderExamGrid();
+  if(state.cart.length) wrap.appendChild(renderCartBar());
   return wrap;
+}
+
+// ---- Cart: pick several certificates and pay for them in one payment ----
+// The cart is kept in this browser (per account) until checkout; the server works out the real total.
+function cartKey(){ return state.currentUser ? 'certbench-cart-' + state.currentUser.id : null; }
+function loadCart(){
+  let list = [];
+  try{ list = JSON.parse(safeGetLS(cartKey()) || '[]'); }catch(e){ list = []; }
+  state.cart = Array.isArray(list) ? list.filter(x => typeof x === 'string').slice(0, 60) : [];
+}
+function saveCart(){ const k = cartKey(); if(k) safeSetLS(k, JSON.stringify(state.cart)); }
+function inCart(slug){ return state.cart.indexOf(slug) !== -1; }
+function toggleCart(slug){
+  state.cart = inCart(slug) ? state.cart.filter(s => s !== slug) : state.cart.concat(slug);
+  state.cartNotice = ''; state.cartError = '';
+  saveCart();
+}
+function removeFromCart(slugs){
+  state.cart = state.cart.filter(s => slugs.indexOf(s) === -1);
+  saveCart();
+}
+// What is in the cart and can still be bought (drops exams since bought, hidden, or made free).
+function cartItems(){
+  const items = state.cart.map(slug => state.exams.find(e => e.slug === slug))
+    .filter(e => e && e.price_inr_paise > 0 && !e.enrolled);
+  if(items.length !== state.cart.length){ state.cart = items.map(e => e.slug); saveCart(); }
+  return items;
+}
+function cartTotal(items){ return items.reduce((sum, e) => sum + e.price_inr_paise, 0); }
+
+async function openCart(){
+  state.cartError = '';
+  if(!state.exams.length){ try{ await loadExams(); }catch(e){} }
+  state.screen = 'cart';
+  render();
+}
+
+function renderCartBar(){
+  const items = cartItems();
+  if(!items.length) return el('div',{});
+  const btn = el('button',{class:'btn btn-primary', type:'button'},['View cart', icon(ICON_ARROW, 16)]);
+  btn.addEventListener('click', openCart);
+  return el('div',{class:'cart-bar', role:'region', 'aria-label':'Cart summary'},[
+    el('div',{class:'cart-bar-text'},[ icon(ICON_CART, 18), el('b',{},[plural(items.length, 'certificate')]), ' in your cart · ', el('b',{},[formatRupees(cartTotal(items))]) ]),
+    btn
+  ]);
+}
+
+function renderCart(){
+  const wrap = el('div',{class:'select-wrap cart-wrap'});
+  const backBtn = el('button',{class:'back-link'},['← Back to exams']);
+  backBtn.addEventListener('click', ()=>{ state.cartNotice = ''; state.screen='select'; render(); });
+  wrap.appendChild(backBtn);
+  wrap.appendChild(el('div',{class:'select-head'},[
+    el('h1',{},['Your cart']),
+    el('p',{},['Pay for all of these certificates in one payment. Each one unlocks as soon as the payment goes through.'])
+  ]));
+  if(state.cartNotice) wrap.appendChild(el('div',{class:'login-notice cart-notice', role:'status'},[state.cartNotice]));
+
+  const items = cartItems();
+  if(!items.length){
+    const browse = el('button',{class:'btn btn-primary', type:'button'},['Browse certificates']);
+    browse.addEventListener('click', ()=>{ state.cartNotice = ''; state.screen='select'; render(); });
+    wrap.appendChild(el('div',{class:'cart-empty'},[
+      el('div',{class:'cart-empty-icon'},[icon(ICON_CART, 28)]),
+      el('h2',{},['Your cart is empty']),
+      el('p',{},['Tap “Add to cart” on any paid certificate to buy several together.']),
+      browse
+    ]));
+    return wrap;
+  }
+
+  const list = el('ul',{class:'cart-list'});
+  items.forEach(e=>{
+    const remove = el('button',{class:'link-btn cart-remove', type:'button', 'aria-label':'Remove ' + e.name + ' from cart'},['Remove']);
+    remove.addEventListener('click', ()=>{ toggleCart(e.slug); render(); });
+    list.appendChild(el('li',{class:'cart-item'},[
+      el('span',{class:'cert-badge cart-badge', style:`--c:${safeColor(e.color)}`},[e.short_label]),
+      el('div',{class:'cart-item-main'},[
+        el('div',{class:'cart-item-name'},[e.name]),
+        el('div',{class:'cart-item-meta'},[(e.set_count || 5) + ' practice sets · ' + e.question_count + ' questions each']),
+        remove
+      ]),
+      el('div',{class:'cart-item-price'},[formatRupees(e.price_inr_paise)])
+    ]));
+  });
+
+  const total = cartTotal(items);
+  const payBtn = el('button',{class:'btn btn-primary cart-pay', type:'button', disabled: state.cartBusy ? 'disabled' : undefined},
+    [state.cartBusy ? 'Starting payment…' : 'Pay ' + formatRupees(total)]);
+  payBtn.addEventListener('click', checkoutCart);
+  const clearBtn = el('button',{class:'link-btn', type:'button'},['Empty cart']);
+  clearBtn.addEventListener('click', ()=>{ if(window.confirm('Remove everything from your cart?')){ state.cart = []; saveCart(); render(); } });
+
+  wrap.appendChild(el('div',{class:'cart-layout'},[
+    list,
+    el('aside',{class:'cart-summary', 'aria-label':'Order summary'},[
+      el('h2',{},['Order summary']),
+      el('div',{class:'cart-sum-row'},[ el('span',{},[plural(items.length, 'certificate')]), el('span',{},[formatRupees(total)]) ]),
+      el('div',{class:'cart-sum-row cart-sum-total'},[ el('span',{},['Total']), el('b',{},[formatRupees(total)]) ]),
+      state.cartError ? el('div',{class:'login-error', role:'alert'},[state.cartError]) : null,
+      payBtn,
+      el('p',{class:'cart-sum-note'},['Secure payment by Razorpay: UPI, cards or netbanking.']),
+      el('p',{class:'cart-sum-clear'},[clearBtn])
+    ])
+  ]));
+  return wrap;
+}
+
+// Marks exams as bought, takes them out of the cart and shows a confirmation.
+function cartDone(slugs, message){
+  slugs.forEach(markExamEnrolled);
+  removeFromCart(slugs);
+  state.cartBusy = false; state.cartError = '';
+  state.cartNotice = message;
+  render();
+}
+
+async function checkoutCart(){
+  if(state.cartBusy) return;
+  const items = cartItems();
+  if(!items.length) return;
+  state.cartBusy = true; state.cartError = ''; state.cartNotice = ''; render();
+  try{
+    const data = await api('/payments/cart/checkout', { method:'POST', body:{ examSlugs: items.map(e => e.slug) } });
+    // Anything already owned, free or no longer offered leaves the cart without being charged.
+    const settled = (data.enrolledFree || []).concat(data.alreadyOwned || []);
+    settled.forEach(markExamEnrolled);
+    removeFromCart(settled.concat(data.unavailable || []));
+    if(data.unavailable && data.unavailable.length) await loadExams().catch(()=>{});
+
+    if(data.nothingToPay){
+      cartDone([], 'Nothing to pay: everything in your cart is already unlocked.');
+      return;
+    }
+    if(data.devMode){
+      cartDone(data.enrolled || [], 'Unlocked ' + plural((data.enrolled || []).length, 'certificate') + '. (Test mode: no payment gateway is set up on this server, so nothing was charged.)');
+      return;
+    }
+
+    await loadRazorpayScript();
+    state.cartBusy = false; render();
+    const names = data.items.map(i => i.name);
+    const rzp = new window.Razorpay({
+      key: data.keyId,
+      amount: data.amountPaise,
+      currency: data.currency,
+      name: 'CertBench',
+      description: names.length === 1 ? 'Enrollment: ' + names[0] : 'Enrollment: ' + names.length + ' certificates',
+      order_id: data.orderId,
+      prefill: {
+        name: state.currentUser ? state.currentUser.name : '',
+        email: state.currentUser ? state.currentUser.email : '',
+        contact: state.currentUser ? state.currentUser.mobile : ''
+      },
+      theme: { color: '#5b47f5' },
+      handler: async function(response){
+        state.cartBusy = true; render();
+        try{
+          const v = await api('/payments/cart/verify', { method:'POST', body:{
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature
+          }});
+          await loadExams().catch(()=>{});
+          cartDone(v.enrolled && v.enrolled.length ? v.enrolled : data.items.map(i => i.slug), 'Payment successful. ' + plural(data.items.length, 'certificate') + ' unlocked — you can start practising now.');
+        }catch(err){
+          state.cartBusy = false;
+          state.cartError = err.message || 'Payment verification failed. If money was deducted, contact support with your payment ID.';
+          render();
+        }
+      },
+      modal: { ondismiss: function(){ /* closed without paying: the cart stays as it was */ } }
+    });
+    rzp.on('payment.failed', function(){
+      state.cartError = 'Payment failed. Nothing was charged; please try again.';
+      render();
+    });
+    rzp.open();
+  }catch(err){
+    state.cartBusy = false;
+    state.cartError = err.message || 'Could not start the payment.';
+    render();
+  }
 }
 
 // ---- "Rate CertBench" card for signed-in users (one review each; admins approve before it goes public) ----
@@ -2327,7 +2536,8 @@ function signOut(){
     visitedIds:{}, skippedIds:{},
     results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined, canReview:false,
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
-    loginError:'', loginNotice:'', registerError:'', regDraft:null, regVerify:null
+    loginError:'', loginNotice:'', registerError:'', regDraft:null, regVerify:null,
+    cart:[], cartBusy:false, cartError:'', cartNotice:''
   });
   render();
   loadLandingExams();
@@ -2351,6 +2561,7 @@ function render(){
   else if(state.screen === 'select') main.appendChild(renderSelect());
   else if(state.screen === 'sets') main.appendChild(renderSets());
   else if(state.screen === 'history') main.appendChild(renderHistory());
+  else if(state.screen === 'cart') main.appendChild(renderCart());
   else if(state.screen === 'exam') main.appendChild(renderExam());
   else if(state.screen === 'review') main.appendChild(renderReview());
   else if(state.screen === 'results') main.appendChild(renderResults());
@@ -2415,6 +2626,7 @@ async function boot(){
     try{
       const me = await api('/auth/me');
       state.currentUser = me.user;
+      loadCart();
       await loadExams();
       state.screen = 'select';
     }catch(e){

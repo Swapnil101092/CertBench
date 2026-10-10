@@ -3,7 +3,7 @@
 // (/api/*) are always fetched fresh from the network; they're never cached,
 // since exam data, auth, and payments must always be live and correct.
 
-const CACHE_NAME = 'certbench-shell-v13';
+const CACHE_NAME = 'certbench-shell-v14';
 const SHELL_FILES = [
   '/',
   '/index.html',
@@ -11,6 +11,7 @@ const SHELL_FILES = [
   '/marquee-speed.js',
   '/visitor-counter.js',
   '/visitor-counter.css',
+  '/cart.css',
   '/styles.css',
   '/manifest.json',
   '/favicon.png',
