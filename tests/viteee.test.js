@@ -1,6 +1,7 @@
 // VITEEE: one certificate split into timed sections, and questions that are (or include) an image.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { startServer, validUser } = require('./helpers');
@@ -37,7 +38,12 @@ test('viteee bank: well-formed, unique questions in every pool, enough for two f
       assert.ok(pool && pool.length >= part.questions * 2, `${part.pool}: at least two sets' worth of unique questions`);
       pool.forEach((q, i) => {
         const where = `${part.pool} #${i + 1}`;
-        assert.equal(q.length, 6, where);
+        assert.ok(q.length === 6 || q.length === 7, where);
+        if(q.length === 7){
+          const file = path.join(bank.imageDir, q[6]);
+          assert.ok(/\.png$/.test(q[6]) && fs.existsSync(file), `${where}: image ${q[6]} exists`);
+          assert.ok(fs.statSync(file).size <= 1024 * 1024, `${where}: image fits the 1 MB limit`);
+        }
         assert.equal(q[5], 0, where);
         assert.ok(q[0].length >= 10 && q[0].length <= 500, where);
         q.slice(1, 5).forEach(o => assert.ok(typeof o === 'string' && o.trim() && o.length <= 200, where));
@@ -59,6 +65,11 @@ test('viteee: seeded as 5 sets of 100, section by section, 5 Aptitude + 5 Englis
     for(let set = 1; set <= 5; set++){
       const rows = db.prepare('SELECT section, COUNT(*) AS n FROM questions WHERE exam_id = ? AND set_number = ? GROUP BY section').all(exam.id, set);
       assert.deepEqual(Object.fromEntries(rows.map(r => [r.section, r.n])), { Mathematics: 40, Physics: 25, Chemistry: 25, 'Aptitude & English': 10 }, 'set ' + set);
+    }
+    // Every set has 2 diagram questions in each of Maths, Physics and Chemistry, and 1 in Aptitude & English.
+    for(let set = 1; set <= 5; set++){
+      const rows = db.prepare("SELECT section, COUNT(*) AS n FROM questions WHERE exam_id = ? AND set_number = ? AND image_mime = 'image/png' AND length(image_data) > 0 GROUP BY section").all(exam.id, set);
+      assert.deepEqual(Object.fromEntries(rows.map(r => [r.section, r.n])), { Mathematics: 2, Physics: 2, Chemistry: 2, 'Aptitude & English': 1 }, 'figures in set ' + set);
     }
     // Sets 1 and 2 share no questions.
     const shared = db.prepare('SELECT COUNT(*) AS n FROM questions a JOIN questions b ON a.text = b.text WHERE a.exam_id = ? AND b.exam_id = ? AND a.set_number = 1 AND b.set_number = 2').get(exam.id, exam.id).n;
@@ -82,6 +93,9 @@ test('viteee: start returns the sections in order with their timers, and questio
   const order = r.data.questions.map(q => q.section);
   assert.equal(order.slice(0, 40).every(s => s === 'Mathematics'), true);
   assert.equal(order.slice(90).every(s => s === 'Aptitude & English'), true);
+  const figures = r.data.questions.filter(q => q.image);
+  assert.equal(figures.length, 7, 'built-in diagram questions come with their image');
+  assert.ok(figures.every(q => q.image.startsWith('data:image/png;base64,')));
 
   // Answer every Physics question right (using the answer key from the database), submit, and check the breakdown.
   const db = new DatabaseSync(srv.dbPath);
