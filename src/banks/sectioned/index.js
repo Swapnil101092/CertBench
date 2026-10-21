@@ -19,7 +19,7 @@ const VITEEE_SECTIONS = [
 ];
 
 const META = [
-  { slug: 'viteee', name: 'VITEEE – VIT Engineering Entrance Exam', short_label: 'VIT', color: '#1e40af', price_inr: 499,
+  { slug: 'viteee', name: 'VITEEE – VIT Engineering Entrance Exam', short_label: 'VIT', color: '#1e40af', price_inr: 499, audience: 'student',
     pass_pct: 50, sections: VITEEE_SECTIONS.map(({ name, questions, minutes }) => ({ name, questions, minutes })),
     seedSections: VITEEE_SECTIONS,
     description: 'Full-length VITEEE mock: Mathematics, Physics, Chemistry, Aptitude and English, each section with its own timer, as per the latest pattern.' }

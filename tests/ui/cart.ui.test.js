@@ -15,7 +15,7 @@ test.before(async () => {
 test.after(async () => { if(browser) await browser.close(); if(srv) srv.stop(); });
 
 test('cart: add two paid certificates, see the total, pay once, both unlock', async () => {
-  const u = validUser();
+  const u = validUser({ accountType: 'professional' });
   await srv.signUp(u);
   const token = (await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } })).data.token;
   const exams = (await srv.api('/exams', { token })).data.exams;

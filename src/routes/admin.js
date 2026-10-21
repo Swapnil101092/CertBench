@@ -8,6 +8,7 @@ const settings = require('../settings');
 const reviews = require('../reviews');
 const photos = require('../photos');
 const Sections = require('../sections');
+const Audience = require('../audience');
 
 const router = express.Router();
 router.use(requireAdmin);          // every route below needs a logged-in admin (checked in the database each time)
@@ -59,7 +60,7 @@ function describeExams(onlyId){
     const att = attemptRows.find(x => x.exam_id === e.id);
     return {
       id: e.id, slug: e.slug, name: e.name, description: e.description,
-      shortLabel: e.short_label, color: e.color,
+      shortLabel: e.short_label, color: e.color, audience: e.audience,
       durationMinutes: e.duration_minutes, passPct: e.pass_pct,
       priceInr: e.price_inr_paise / 100,
       active: !!e.active, source: e.source,
@@ -115,6 +116,12 @@ function validateExam(body, creating){
   if(!Number.isInteger(pass) || pass < 1 || pass > 100) errors.passPct = 'Pass mark must be a whole number, 1-100.';
   else v.pass_pct = pass;
 
+  // Who it's for. Left out on an edit = unchanged; on a new certificate = IT Professionals.
+  if(b.audience !== undefined){
+    if(!Audience.isAudience(b.audience)) errors.audience = 'Choose Students or IT Professionals.';
+    else v.audience = b.audience;
+  }
+
   const price = b.priceInr;
   if(typeof price !== 'number' || !Number.isFinite(price) || price < 0 || price > 100000 || Math.abs(price * 100 - Math.round(price * 100)) > 1e-6){
     errors.priceInr = 'Price must be 0 (free) up to 100000, with at most 2 decimals.';
@@ -139,10 +146,10 @@ router.post('/exams', (req, res) => {
   if(Object.keys(errors).length) return fail(res, 400, 'Please fix the highlighted fields.', { fields: errors });
   // New certificates start hidden ("draft") until they have questions and you publish them.
   const info = db.prepare(`
-    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, active, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
+    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, audience, active, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
   `).run(values.slug, values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
-    values.sections ? JSON.stringify(values.sections) : null);
+    values.sections ? JSON.stringify(values.sections) : null, values.audience || 'professional');
   audit(req, 'exam.create', `${values.slug} ("${values.name}")`);
   res.status(201).json({ exam: describeExams(info.lastInsertRowid)[0] });
 });
@@ -162,10 +169,10 @@ router.put('/exams/:id', (req, res) => {
   const renames = before.map((s, i) => after[i] && after[i].name !== s.name && !after.some(a => a.name === s.name) ? [s.name, after[i].name] : null).filter(Boolean);
   db.transaction(() => {
     db.prepare(`
-      UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, sections = ?, source = 'admin'
+      UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, sections = ?, audience = ?, source = 'admin'
       WHERE id = ?
     `).run(values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
-      values.sections ? JSON.stringify(values.sections) : null, id);
+      values.sections ? JSON.stringify(values.sections) : null, values.audience || exam.audience, id);
     for(const [from, to] of renames) db.prepare('UPDATE questions SET section = ? WHERE exam_id = ? AND section = ?').run(to, id, from);
   })();
   audit(req, 'exam.update', `${exam.slug}`);
@@ -457,6 +464,7 @@ function describeUser(u){
   return {
     id: u.id, name: u.name, email: u.email, mobile: u.mobile, username: u.username, createdAt: u.created_at,
     isAdmin: isAdminUser(u), adminVia: adminVia(u),
+    accountType: Audience.isAudience(u.account_type) ? u.account_type : null,
     paidEnrollments: paid.n, paidTotalInr: paid.total / 100, attempts: att.n,
     lastSeenAt: u.last_seen_at || null,
     activeNow: !!u.last_seen_at && Date.parse(u.last_seen_at.replace(' ', 'T') + 'Z') >= Date.now() - ACTIVE_WINDOW_MINUTES * 60000
@@ -513,6 +521,12 @@ function validateUserFields(body, current){
       else values.username = uname;
     }
   }
+  // Student / IT Professional; null or '' = not chosen (they'll be asked on their next sign-in).
+  if(b.accountType !== undefined){
+    const t = b.accountType === '' ? null : b.accountType;
+    if(t !== null && !Audience.isAudience(t)) fields.accountType = 'Choose Student or IT Professional.';
+    else if(current === null || t !== (current.account_type || null)) values.account_type = t;
+  }
   if(current === null){
     const e = V.checkPassword(b.password, typeof b.username === 'string' ? b.username : ''); if(e) fields.password = e;
   }
@@ -523,9 +537,17 @@ router.get('/users', (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
   const PAGE = 25;
   let page = parseInt(req.query.page, 10); if(!Number.isInteger(page) || page < 1) page = 1;
-  const where = q ? `WHERE lower(name) LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\'` : '';
-  const like = '%' + q.replace(/[\\%_]/g, (m) => '\\' + m) + '%';
-  const params = q ? [like, like, like, like] : [];
+  const conds = [], params = [];
+  if(q){
+    const like = '%' + q.replace(/[\\%_]/g, (m) => '\\' + m) + '%';
+    conds.push(`(lower(name) LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\')`);
+    params.push(like, like, like, like);
+  }
+  // ?type=student | professional | none (not chosen yet)
+  const type = String(req.query.type || '');
+  if(Audience.isAudience(type)){ conds.push('account_type = ?'); params.push(type); }
+  else if(type === 'none') conds.push("(account_type IS NULL OR account_type NOT IN ('student', 'professional'))");
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const total = db.prepare(`SELECT COUNT(*) AS n FROM users ${where}`).get(...params).n;
   const pages = Math.max(1, Math.ceil(total / PAGE));
   if(page > pages) page = pages;
@@ -552,8 +574,8 @@ router.post('/users', (req, res) => {
   const hash = bcrypt.hashSync(String(req.body.password), 10);
   let info;
   try{
-    info = db.prepare('INSERT INTO users (name, email, mobile, username, password_hash) VALUES (?, ?, ?, ?, ?)')
-      .run(values.name, values.email, values.mobile, values.username, hash);
+    info = db.prepare('INSERT INTO users (name, email, mobile, username, password_hash, account_type) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(values.name, values.email, values.mobile, values.username, hash, values.account_type || null);
   }catch(e){
     return fail(res, 409, 'That username or email is already registered.');
   }

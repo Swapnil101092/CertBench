@@ -128,6 +128,14 @@ try{ raw.exec('ALTER TABLE exams ADD COLUMN sections TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN section TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN image_mime TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN image_data BLOB'); }catch(e){}
+// users.account_type: 'student' | 'professional' (NULL = not chosen yet; they're asked on next sign-in).
+// exams.audience: who the certificate is for. When the column is first added, entrance exams
+// (VITEEE and JEE subjects) become Students' and everything else IT Professionals'.
+try{ raw.exec('ALTER TABLE users ADD COLUMN account_type TEXT'); }catch(e){}
+try{
+  raw.exec("ALTER TABLE exams ADD COLUMN audience TEXT NOT NULL DEFAULT 'professional'");
+  raw.exec("UPDATE exams SET audience = 'student' WHERE slug = 'viteee' OR short_label IN ('VIT', 'PHY', 'CHEM', 'MATH')");
+}catch(e){}
 
 raw.exec(`
 -- Which questions an attempt was actually served, so grading stays correct even if an

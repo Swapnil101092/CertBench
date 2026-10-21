@@ -31,6 +31,7 @@ if(addColumn('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAU
   db.exec(`UPDATE users SET email_verified = 0 WHERE id NOT IN (SELECT DISTINCT user_id FROM otps WHERE consumed = 1)`);
 }
 addColumn('ALTER TABLE users ADD COLUMN mobile_verified INTEGER NOT NULL DEFAULT 0');
+addColumn('ALTER TABLE pending_registrations ADD COLUMN account_type TEXT');
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_GAP_MS = 30 * 1000;
@@ -42,16 +43,16 @@ function hash(code){ return bcrypt.hashSync(code, 8); }
 
 function prune(){ db.prepare('DELETE FROM pending_registrations WHERE expires_at < ?').run(Date.now() - 60 * 60 * 1000); }
 
-function create({ name, email, mobile, username, passwordHash, withMobile }){
+function create({ name, email, mobile, username, passwordHash, withMobile, accountType }){
   prune();
   const id = crypto.randomBytes(24).toString('base64url');
   const emailCode = genCode();
   const mobileCode = withMobile ? genCode() : null;
   const now = Date.now();
   db.prepare(`INSERT INTO pending_registrations
-    (id, name, email, mobile, username, password_hash, email_code_hash, mobile_code_hash, last_email_sent_at, last_mobile_sent_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, name, email, mobile, username, passwordHash, hash(emailCode), mobileCode ? hash(mobileCode) : null, now, now, now + CODE_TTL_MS);
+    (id, name, email, mobile, username, password_hash, email_code_hash, mobile_code_hash, last_email_sent_at, last_mobile_sent_at, expires_at, account_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, name, email, mobile, username, passwordHash, hash(emailCode), mobileCode ? hash(mobileCode) : null, now, now, now + CODE_TTL_MS, accountType || null);
   return { id, emailCode, mobileCode };
 }
 

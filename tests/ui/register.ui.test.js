@@ -89,6 +89,7 @@ test('E2E: register -> verify email + mobile codes -> signed in -> duplicate rej
   let page = await openRegister();
   for(const [k, v] of Object.entries(user)) await page.fill('#reg-' + k, v);
   await page.fill('#reg-confirm', user.password);
+  await page.click('.type-option[data-type="professional"]');
   await page.click('button[type=submit]');
 
   // Step 2: one box per code; on this test server the codes are shown on screen.
@@ -118,6 +119,7 @@ test('E2E: register -> verify email + mobile codes -> signed in -> duplicate rej
   page = await openRegister();
   for(const [k, v] of Object.entries({ ...user, email: 'other@example.com', mobile: '9812345671' })) await page.fill('#reg-' + k, v);
   await page.fill('#reg-confirm', user.password);
+  await page.click('.type-option[data-type="professional"]');
   await page.click('button[type=submit]');
   await page.waitForFunction(() => document.getElementById('reg-username-error').textContent.length > 0);
   assert.match(await err(page, 'reg-username'), /already taken/i);
@@ -141,6 +143,7 @@ test('verify step: "Change your details" goes back to the form with everything s
   const user = { name: 'Back Tester', email: 'back.tester@example.com', mobile: '9812345699', username: 'back_tester', password: 'Back#Tester9' };
   for(const [k, v] of Object.entries(user)) await page.fill('#reg-' + k, v);
   await page.fill('#reg-confirm', user.password);
+  await page.click('.type-option[data-type="professional"]');
   await page.click('button[type=submit]');
   await page.waitForSelector('#reg-email-code');
   await page.click('button:has-text("Change your details")');

@@ -3,6 +3,7 @@
 // own row in `enrollments` (as if bought one by one), so access checks and the admin panel's
 // revenue figures work unchanged.
 const db = require('./db');
+const Audience = require('./audience');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS cart_orders (
@@ -37,10 +38,13 @@ function plan(userId, slugs){
   const getExam = db.prepare('SELECT * FROM exams WHERE slug = ? AND active = 1');
   const isOwned = db.prepare("SELECT 1 FROM enrollments WHERE user_id = ? AND exam_id = ? AND status = 'paid'");
   const out = { toBuy: [], free: [], owned: [], unknown: [], totalPaise: 0 };
+  const viewer = Audience.viewerAudience(userId);
   for(const slug of unique){
     const exam = getExam.get(slug);
     if(!exam){ out.unknown.push(slug); continue; }
     if(isOwned.get(userId, exam.id)){ out.owned.push(exam); continue; }
+    // Meant for the other account type (Students vs IT Professionals): treated as not available.
+    if(!Audience.allowed(exam, userId, viewer)){ out.unknown.push(slug); continue; }
     if(!(exam.price_inr_paise > 0)){ out.free.push(exam); continue; }
     out.toBuy.push(exam);
     out.totalPaise += exam.price_inr_paise;
