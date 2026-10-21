@@ -9,7 +9,6 @@ let state = {
   forgotError: '', forgotNotice: '', resetToken: null, resetEmail: '', resetError: '', resetOtp: null,
   token: null, currentUser: null,
   exams: [], examSearch: '', examCat: 'all', landingCat: 'all', landingQuery: '', landingShowAll: false, landingExams: null, siteSettings: null, topReviews: null, myReview: undefined,
-  enrollBusySlug: null,
   cart: [], cartBusy: false, cartError: '', cartNotice: '',   // certificates picked to buy together
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
   examMeta: null, examSetNumber: null, attemptId: null, questions: [], current: 0, answers: {},
@@ -1619,80 +1618,6 @@ function markExamEnrolled(slug){
   if(inCart(slug)) removeFromCart([slug]);   // bought on its own: no longer needed in the cart
 }
 
-async function enrollInExam(slug){
-  if(state.enrollBusySlug) return;
-  const bank = state.exams.find(b => b.slug === slug);
-  if(!bank) return;
-
-  state.enrollBusySlug = slug;
-  render();
-
-  try{
-    const data = await api('/payments/enroll', { method:'POST', body:{ examSlug: slug } });
-
-    if(data.alreadyEnrolled || data.free){
-      markExamEnrolled(slug);
-      state.enrollBusySlug = null;
-      render();
-      return;
-    }
-
-    if(data.devMode){
-      // No real gateway configured on the server yet — enrollment was
-      // completed instantly server-side so the flow can still be tested.
-      markExamEnrolled(slug);
-      state.enrollBusySlug = null;
-      render();
-      alert('No live payment gateway is configured on this server yet, so you were enrolled for free in dev mode. Add Razorpay keys to .env to require real payment.');
-      return;
-    }
-
-    // Real gateway: open Razorpay Checkout.
-    await loadRazorpayScript();
-    state.enrollBusySlug = null;
-    render();
-
-    const rzp = new window.Razorpay({
-      key: data.keyId,
-      amount: data.amountPaise,
-      currency: data.currency,
-      name: 'CertBench',
-      description: `Enrollment: ${data.examName}`,
-      order_id: data.orderId,
-      prefill: {
-        name: state.currentUser ? state.currentUser.name : '',
-        email: state.currentUser ? state.currentUser.email : '',
-        contact: state.currentUser ? state.currentUser.mobile : ''
-      },
-      theme: { color: bank.color },
-      handler: async function(response){
-        try{
-          await api('/payments/verify', { method:'POST', body:{
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature
-          }});
-          markExamEnrolled(slug);
-          render();
-        }catch(err){
-          alert(err.message || 'Payment verification failed. If money was deducted, contact support with your payment ID.');
-        }
-      },
-      modal: {
-        ondismiss: function(){ /* user closed the payment window; nothing to do */ }
-      }
-    });
-    rzp.on('payment.failed', function(){
-      alert('Payment failed. Please try again.');
-    });
-    rzp.open();
-  }catch(err){
-    state.enrollBusySlug = null;
-    render();
-    alert(err.message || 'Could not start enrollment.');
-  }
-}
-
 function renderForgot(){
   const wrap = el('div',{class:'login-wrap'});
   const formCol = el('div',{class:'auth-form-col'});
@@ -1879,28 +1804,26 @@ function renderSelect(){
     filtered.forEach(bank=>{
       const isPaid = bank.price_inr_paise > 0;
       const isEnrolled = bank.enrolled || !isPaid;
-      const isBusy = state.enrollBusySlug === bank.slug;
 
       const priceBadge = el('span',{class:'price-badge '+(isPaid ? '' : 'free')},[
         isPaid ? formatRupees(bank.price_inr_paise) : 'Free'
       ]);
 
-      const actionBtn = isEnrolled
-        ? el('button',{class:'btn btn-primary'},['Choose a practice set', icon(ICON_ARROW, 16)])
-        : el('button',{class:'btn btn-primary', disabled: isBusy?'disabled':undefined},[isBusy ? 'Starting…' : `Enroll — ${formatRupees(bank.price_inr_paise)}`]);
-
-      actionBtn.addEventListener('click', ()=>{
-        if(isEnrolled) loadSets(bank.slug);
-        else enrollInExam(bank.slug);
-      });
-
-      // Paid and not bought yet: can also go in the cart, to pay for several at once.
-      let cartToggle = null;
-      if(!isEnrolled){
-        const added = inCart(bank.slug);
-        cartToggle = el('button',{class:'btn btn-ghost cart-toggle' + (added ? ' added' : ''), type:'button', 'aria-pressed': added ? 'true' : 'false'},
-          added ? [icon(ICON_CHECK, 16), 'In cart · Remove'] : [icon(ICON_CART, 16), 'Add to cart']);
+      // Bought (or free): open it. Paid and not bought: everything is bought through the cart, so one
+      // exam or several are paid the same way. Once added, the main button takes you to the cart.
+      let actionBtn, cartToggle = null;
+      if(isEnrolled){
+        actionBtn = el('button',{class:'btn btn-primary'},['Choose a practice set', icon(ICON_ARROW, 16)]);
+        actionBtn.addEventListener('click', ()=> loadSets(bank.slug));
+      } else if(inCart(bank.slug)){
+        actionBtn = el('button',{class:'btn btn-primary cart-go', type:'button'},['Go to cart', icon(ICON_ARROW, 16)]);
+        actionBtn.addEventListener('click', openCart);
+        cartToggle = el('button',{class:'link-btn cart-toggle added', type:'button', 'aria-pressed':'true'},['In cart · Remove']);
         cartToggle.addEventListener('click', ()=>{ toggleCart(bank.slug); render(); });
+      } else {
+        actionBtn = el('button',{class:'btn btn-primary cart-toggle', type:'button', 'aria-pressed':'false'},
+          [icon(ICON_CART, 16), 'Add to cart — ' + formatRupees(bank.price_inr_paise)]);
+        actionBtn.addEventListener('click', ()=>{ toggleCart(bank.slug); render(); });
       }
 
       const card = el('div',{class:'cert-card', style:`--c:${safeColor(bank.color)}`},[
