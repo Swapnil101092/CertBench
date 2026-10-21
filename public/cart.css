@@ -60,9 +60,4 @@
   .cart-bar .btn{ width:100%; }
 }
 
-/* Small phones: the top bar (avatar, Cart, My results, Sign out, theme) wraps instead of running off-screen. */
-@media (max-width: 560px){
-  .topbar{ flex-wrap:wrap; row-gap:.55rem; }
-  .topbar-right{ flex-wrap:wrap; justify-content:flex-end; row-gap:.4rem; margin-left:auto; }
-  .cart-label{ display:none; }
-}
+
