@@ -253,7 +253,7 @@ function examFormFields(exam, creating){
       el('div', { class: 'adm-err', 'data-for': key })
     ]);
   }
-  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '' };
+  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '', sections: null };
   inputs.name = el('input', { class: 'adm-input', type: 'text', maxlength: '80', value: e.name });
   inputs.description = el('textarea', { class: 'adm-input', rows: '3', maxlength: '300', value: e.description });
   inputs.shortLabel = el('input', { class: 'adm-input adm-narrow', type: 'text', maxlength: '4', value: e.shortLabel });
@@ -283,6 +283,8 @@ function examFormFields(exam, creating){
   inputs.color.addEventListener('input', updatePreview);
   updatePreview();
 
+  var sections = sectionsEditor(e.sections, inputs.durationMinutes);
+
   var node = el('div', { class: 'adm-form' }, [
     field('name', 'Certificate name', inputs.name),
     slugField,
@@ -295,7 +297,8 @@ function examFormFields(exam, creating){
       field('durationMinutes', 'Time limit (minutes)', inputs.durationMinutes),
       field('passPct', 'Pass mark (%)', inputs.passPct),
       field('priceInr', 'Price (₹)', inputs.priceInr, '0 = free')
-    ])
+    ]),
+    sections.node
   ]);
 
   function num(input){ return input.value.trim() === '' ? null : Number(input.value); }
@@ -304,7 +307,8 @@ function examFormFields(exam, creating){
     read: function(){
       var body = {
         name: inputs.name.value, description: inputs.description.value, shortLabel: inputs.shortLabel.value,
-        color: inputs.color.value, durationMinutes: num(inputs.durationMinutes), passPct: num(inputs.passPct), priceInr: num(inputs.priceInr)
+        color: inputs.color.value, durationMinutes: num(inputs.durationMinutes), passPct: num(inputs.passPct), priceInr: num(inputs.priceInr),
+        sections: sections.read()
       };
       if(inputs.slug) body.slug = inputs.slug.value;
       return body;
@@ -315,6 +319,64 @@ function examFormFields(exam, creating){
         var n = node.querySelector('.adm-err[data-for="' + k + '"]');
         if(n) n.textContent = fields[k];
       });
+    }
+  };
+}
+
+// Optional timed sections (e.g. Mathematics 40 questions / 50 min, Physics ...). With sections, each one has its own
+// timer and the certificate's time limit is their total.
+function sectionsEditor(initial, durationInput){
+  var rows = [];
+  var list = el('div', { class: 'adm-sections' });
+  var total = el('div', { class: 'adm-hint' });
+  var on = el('input', { type: 'checkbox', checked: !!(initial && initial.length) });
+  function int(input){ return input.value.trim() === '' ? null : Number(input.value); }
+  function update(){
+    list.hidden = !on.checked;
+    addBtn.hidden = !on.checked;
+    durationInput.disabled = on.checked;
+    if(on.checked){
+      var mins = 0, qs = 0;
+      rows.forEach(function(r){ mins += int(r.minutes) || 0; qs += int(r.questions) || 0; });
+      durationInput.value = String(mins);
+      total.textContent = 'Total: ' + qs + ' questions per set, ' + mins + ' minutes. Students take the sections in this order and can’t go back to a finished one.';
+    } else total.textContent = 'Off: one timer for the whole set.';
+  }
+  function addRow(sec){
+    var r = {
+      name: el('input', { class: 'adm-input', type: 'text', maxlength: '40', placeholder: 'Section name, e.g. Physics', value: sec ? sec.name : '', 'aria-label': 'Section name' }),
+      questions: el('input', { class: 'adm-input adm-narrow', type: 'number', min: '1', max: '200', step: '1', value: sec ? String(sec.questions) : '10', 'aria-label': 'Questions per set' }),
+      minutes: el('input', { class: 'adm-input adm-narrow', type: 'number', min: '1', max: '300', step: '1', value: sec ? String(sec.minutes) : '15', 'aria-label': 'Minutes' })
+    };
+    r.node = el('div', { class: 'adm-section-row' }, [
+      r.name,
+      el('label', { class: 'adm-inline' }, [r.questions, ' questions']),
+      el('label', { class: 'adm-inline' }, [r.minutes, ' min']),
+      el('button', { class: 'btn btn-ghost adm-small', type: 'button', title: 'Move up', 'aria-label': 'Move up', onclick: function(){
+        var i = rows.indexOf(r); if(i > 0){ rows.splice(i, 1); rows.splice(i - 1, 0, r); redraw(); }
+      } }, ['↑']),
+      el('button', { class: 'btn btn-ghost adm-small', type: 'button', title: 'Remove section', 'aria-label': 'Remove section', onclick: function(){
+        rows.splice(rows.indexOf(r), 1); redraw();
+      } }, ['✕'])
+    ]);
+    [r.questions, r.minutes].forEach(function(inp){ inp.addEventListener('input', update); });
+    rows.push(r);
+  }
+  function redraw(){ clear(list); rows.forEach(function(r){ list.appendChild(r.node); }); update(); }
+  var addBtn = el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ addRow(null); redraw(); } }, ['+ Add section']);
+  (initial || []).forEach(addRow);
+  on.addEventListener('change', function(){ if(on.checked && !rows.length){ addRow(null); } redraw(); });
+  var node = el('div', { class: 'adm-field' }, [
+    el('label', { class: 'adm-check' }, [on, ' Split each set into timed sections (each section has its own timer)']),
+    list, addBtn, total,
+    el('div', { class: 'adm-err', 'data-for': 'sections' })
+  ]);
+  redraw();
+  return {
+    node: node,
+    read: function(){
+      if(!on.checked) return null;
+      return rows.map(function(r){ return { name: r.name.value, questions: int(r.questions), minutes: int(r.minutes) }; });
     }
   };
 }
@@ -421,6 +483,17 @@ function buildQuestionsSection(){
     counts.map(function(c, i){ return 'Set ' + (i + 1) + ': ' + c; }).join('   ·   '),
     '.  Students get exactly what is in each set (sets do not have to be the same size).'
   ]));
+  if(e.sectionCounts){
+    sec.appendChild(el('div', { class: 'adm-table-wrap' }, [ el('table', { class: 'adm-table adm-section-counts' }, [
+      el('thead', {}, [ el('tr', {}, [ el('th', {}, ['Section']), el('th', {}, ['Target']) ].concat([1, 2, 3, 4, 5].map(function(n){ return el('th', {}, ['Set ' + n]); }))) ]),
+      el('tbody', {}, e.sectionCounts.map(function(sc, i){
+        var target = e.sections[i].questions;
+        return el('tr', {}, [ el('td', {}, [sc.name]), el('td', {}, [String(target)]) ].concat(sc.sets.map(function(c){
+          return el('td', { class: c === target ? '' : 'adm-off-target', title: c === target ? '' : 'Target is ' + target }, [String(c)]);
+        })));
+      }))
+    ]) ]));
+  }
   if(empties.length) sec.appendChild(el('p', { class: 'adm-warn' }, ['Empty: Set ' + empties.join(', Set ') + '. Every set needs at least one question before this certificate can be published.']));
 
   // set tabs + search + actions
@@ -449,7 +522,7 @@ function fillList(holder){
   var q = S.search.trim().toLowerCase();
   var rows = S.questions.filter(function(x){
     if(S.setFilter !== 'all' && x.set !== S.setFilter) return false;
-    return !q || (x.text + ' ' + x.options.join(' ')).toLowerCase().indexOf(q) !== -1;
+    return !q || (x.text + ' ' + x.options.join(' ') + ' ' + (x.section || '')).toLowerCase().indexOf(q) !== -1;
   });
   if(!rows.length){
     holder.appendChild(el('p', { class: 'adm-empty' }, [S.questions.length ? 'No questions match.' : 'No questions yet. Add one, or import a CSV.']));
@@ -466,10 +539,12 @@ function buildQuestionRow(x){
   return el('div', { class: 'adm-q' }, [
     el('div', { class: 'adm-q-meta' }, [
       el('span', { class: 'adm-pill' }, ['Set ' + x.set]),
+      S.exam.sections ? el('span', { class: 'adm-pill' + (sectionKnown(x.section) ? '' : ' adm-pill-warn'), title: sectionKnown(x.section) ? '' : 'Not in one of this certificate’s sections; students see it in the last section' }, [x.section || 'No section']) : null,
       x.alsoInSets.length ? el('span', { class: 'adm-pill adm-pill-warn', title: 'The same question also appears in another set' }, ['also in Set ' + x.alsoInSets.join(', ')]) : null,
       el('span', { class: 'adm-q-id' }, ['#' + x.id])
     ]),
-    el('div', { class: 'adm-q-text' }, [x.text]),
+    x.text ? el('div', { class: 'adm-q-text' }, [x.text]) : null,
+    x.hasImage ? lazyImage(x.id) : null,
     el('ol', { class: 'adm-q-opts', type: 'A' }, x.options.map(function(o, i){
       return el('li', { class: i === x.correctIndex ? 'correct' : '' }, [o + (i === x.correctIndex ? '  ✓ correct' : '')]);
     })),
@@ -492,9 +567,81 @@ function removeQuestion(x){
   }).then(function(){ replaceQuestionsSection(); }));
 }
 
+function sectionKnown(name){
+  return !!(S.exam.sections && S.exam.sections.some(function(s){ return s.name === name; }));
+}
+
+// Question images are loaded one by one when shown, so the question list itself stays small.
+var imageCache = {};
+function lazyImage(id){
+  var img = el('img', { class: 'adm-q-image', alt: 'Question image' });
+  function show(src){ if(src) img.src = src; else img.hidden = true; }
+  if(imageCache[id] !== undefined) show(imageCache[id]);
+  else api('/questions/' + id + '/image').then(function(d){ imageCache[id] = d.image; show(d.image); }).catch(function(){ img.hidden = true; });
+  return img;
+}
+
+// Question images are resized in the browser (longest side 1400px) before upload. Diagrams and
+// screenshots stay PNG so lines and text stay crisp; photos (or very large PNGs) become JPEG.
+function resizeQuestionImage(file){
+  return new Promise(function(resolve, reject){
+    if(!/^image\/(jpeg|png|webp)$/.test(file.type)) return reject(new Error('Only JPEG, PNG or WebP images can be used.'));
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function(){
+      URL.revokeObjectURL(url);
+      var max = 1400, w = img.naturalWidth, h = img.naturalHeight;
+      var k = Math.min(1, max / Math.max(w, h));
+      var c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      var data = c.toDataURL('image/png');
+      if(file.type !== 'image/png' || data.length > 1.3 * 1024 * 1024) data = c.toDataURL('image/jpeg', 0.88);
+      resolve(data);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+    img.src = url;
+  });
+}
+
 // A question form used both for adding and editing.
 function questionFields(q){
-  var text = el('textarea', { class: 'adm-input', rows: '3', maxlength: '500', placeholder: 'Type the question', value: q ? q.text : '' });
+  var text = el('textarea', { class: 'adm-input', rows: '3', maxlength: '500', placeholder: 'Type the question (optional if you attach an image)', value: q ? q.text : '' });
+
+  // Section (only for certificates split into sections)
+  var sectionSel = null;
+  if(S.exam.sections){
+    var current = q && sectionKnown(q.section) ? q.section : (S.lastSection && sectionKnown(S.lastSection) ? S.lastSection : S.exam.sections[0].name);
+    sectionSel = el('select', { class: 'adm-input adm-narrow', value: current }, S.exam.sections.map(function(s){ return el('option', { value: s.name }, [s.name]); }));
+  }
+
+  // Image: undefined = unchanged, null = removed, string = new image (data URL)
+  var image;
+  var preview = el('img', { class: 'adm-q-image', alt: 'Question image preview', hidden: true });
+  var fileInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp' });
+  var removeBtn = el('button', { class: 'btn btn-ghost adm-small', type: 'button', hidden: true }, ['Remove image']);
+  function showPreview(src){
+    if(src){ preview.src = src; preview.hidden = false; removeBtn.hidden = false; }
+    else { preview.removeAttribute('src'); preview.hidden = true; removeBtn.hidden = true; }
+  }
+  if(q && q.hasImage){
+    if(imageCache[q.id]) showPreview(imageCache[q.id]);
+    else api('/questions/' + q.id + '/image').then(function(d){ imageCache[q.id] = d.image; if(image === undefined) showPreview(d.image); }).catch(function(){});
+  }
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files && fileInput.files[0];
+    if(!f) return;
+    resizeQuestionImage(f).then(function(data){ image = data; showPreview(data); }).catch(function(err){ toast(err.message, 'err'); });
+    fileInput.value = '';
+  });
+  removeBtn.addEventListener('click', function(){ image = null; showPreview(null); });
+  var imageField = el('div', { class: 'adm-field adm-image-field' }, [
+    el('label', {}, ['Image (optional): a diagram, graph or equation shown with the question', fileInput]),
+    preview, removeBtn,
+    el('div', { class: 'adm-hint' }, ['JPEG, PNG or WebP, up to 1 MB after resizing. With an image, the question text can be short (or empty).'])
+  ]);
   var opts = [], radios = [];
   var group = 'correct-' + Math.random().toString(36).slice(2);
   var rows = [0, 1, 2, 3].map(function(i){
@@ -503,14 +650,20 @@ function questionFields(q){
     opts.push(input); radios.push(radio);
     return el('div', { class: 'adm-opt' }, [ radio, el('span', { class: 'adm-opt-letter' }, ['ABCD'.charAt(i)]), input ]);
   });
-  var node = el('div', { class: 'adm-qform' }, [ text ].concat(rows, [ el('div', { class: 'adm-hint' }, ['Select the circle next to the correct answer.']) ]));
+  var node = el('div', { class: 'adm-qform' }, [
+    sectionSel ? el('div', { class: 'adm-field' }, [ el('label', {}, ['Section', sectionSel]) ]) : null,
+    text, imageField
+  ].concat(rows, [ el('div', { class: 'adm-hint' }, ['Select the circle next to the correct answer.']) ]));
   return {
     node: node,
     read: function(){
       var idx = -1; radios.forEach(function(r, i){ if(r.checked) idx = i; });
-      return { text: text.value, options: opts.map(function(o){ return o.value; }), correctIndex: idx };
+      var body = { text: text.value, options: opts.map(function(o){ return o.value; }), correctIndex: idx };
+      if(sectionSel){ body.section = sectionSel.value; S.lastSection = sectionSel.value; }
+      if(image !== undefined) body.image = image;
+      return body;
     },
-    reset: function(){ text.value = ''; opts.forEach(function(o){ o.value = ''; }); radios.forEach(function(r, i){ r.checked = i === 0; }); text.focus(); }
+    reset: function(){ text.value = ''; opts.forEach(function(o){ o.value = ''; }); radios.forEach(function(r, i){ r.checked = i === 0; }); image = undefined; showPreview(null); text.focus(); }
   };
 }
 
@@ -529,6 +682,7 @@ function buildEditForm(x){
         var body = f.read(); body.applyToCopies = copies ? copies.checked : false;
         guard(api('/questions/' + x.id, { method: 'PUT', body: body }).then(function(d){
           toast('Saved' + (d.updated > 1 ? ' (' + d.updated + ' copies updated)' : '') + '.', 'ok');
+          imageCache = {};
           S.editingQ = null;
           return refreshExamData();
         }).then(function(){ replaceQuestionsSection(); }));
@@ -581,7 +735,7 @@ function buildImportPanel(){
 
   return el('div', { class: 'adm-panel' }, [
     el('h3', {}, ['Import questions from CSV']),
-    el('p', { class: 'adm-hint' }, ['Columns: question, option_a, option_b, option_c, option_d, correct (A, B, C or D). Save from Excel or Google Sheets as CSV. If any row has a problem, nothing is imported and you will see exactly which rows to fix.']),
+    el('p', { class: 'adm-hint' }, ['Columns: question, option_a, option_b, option_c, option_d, correct (A, B, C or D)' + (S.exam.sections ? ', section (' + S.exam.sections.map(function(s){ return s.name; }).join(' / ') + ')' : '') + '. Save from Excel or Google Sheets as CSV. If any row has a problem, nothing is imported and you will see exactly which rows to fix. To add an image to a question, import it and then use Edit.']),
     el('div', { class: 'adm-hint' }, ['Only add questions you wrote yourself or have the right to use. Copying real exam questions from the certification providers breaks their rules, and this site tells students its questions are original.']),
     el('div', { class: 'adm-actions' }, [
       el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){

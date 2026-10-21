@@ -160,6 +160,16 @@ one) and opens a review screen summarizing answered/skipped/blank counts, with a
 and confirmation if you try to submit with unanswered questions — final submission only
 happens from that screen (except on timer expiry, which still auto-submits immediately).
 
+**Timed sections** (e.g. the VITEEE certificate): a certificate can be split into sections, each with
+its own timer. Students take one section at a time: the palette shows only that section's questions,
+and when its time runs out (or they finish it from the review screen) the next section starts and the
+finished one can't be reopened. Results show a score per section. Sections are set up in the admin
+panel ("Split each set into timed sections"); each question then belongs to a section.
+
+**Question images**: in the admin panel any question can have an image (a diagram, graph or typed
+equation, JPEG/PNG/WebP, resized in the browser, max 1 MB). With an image the question text can be
+short or empty. Images are stored in the database and shown in the exam and in the answer breakdown.
+
 ## 2g. Installable as an app (Android, iOS, desktop)
 
 CertBench is a Progressive Web App (PWA) — once it's deployed somewhere real (see
@@ -315,6 +325,8 @@ certificates, questions and site text at `https://your-site/admin`.
 - **Adding more exams**: use the admin panel (section 2i). The built-in list is the six exams in
   `src/seed.js` plus the certifications in `src/banks/` (metadata in `index.js`, 150 questions per
   exam in `<slug>.json`, split into 5 sets of 30); adding one there loads it on the next start.
+  Sectioned exams such as VITEEE live in `src/banks/sectioned/` (sections and timers in `index.js`,
+  one question pool per section in `<slug>.json`).
 - **Switching to Postgres** later (e.g. if you outgrow SQLite) mainly means swapping
   `src/db.js`'s `node:sqlite` calls for a Postgres client; the route files use plain SQL
   and would need only minor syntax changes (`?` placeholders → `$1`, etc).
