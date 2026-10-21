@@ -498,11 +498,19 @@ function renderAboutPhotos(){
     return b;
   }));
 }
+// Before the server's settings load, the built-in details are shown; after, only what the admin chose to show
+// (a hidden detail comes back as null, and enabled: false hides the whole panel).
+function contactShown(){
+  const c = state.siteSettings && state.siteSettings.contact;
+  return !c || c.enabled !== false;
+}
 function contactInfo(){
-  const c = (state.siteSettings && state.siteSettings.contact) || {};
-  const address = c.address || CONTACT.address;
-  const phone = c.phone || CONTACT.phone;
-  const email = c.email || CONTACT.email;
+  const loaded = !!(state.siteSettings && state.siteSettings.contact);
+  const c = loaded ? state.siteSettings.contact : {};
+  const pick = (v, fallback) => loaded ? (v || '') : fallback;
+  const address = pick(c.address, CONTACT.address);
+  const phone = pick(c.phone, CONTACT.phone);
+  const email = pick(c.email, CONTACT.email);
   // Links are built here from the plain values (never trusted as-is), so a bad value can't become a script link.
   const digits = phone.replace(/[^\d+]/g, '');
   return {
@@ -740,7 +748,7 @@ function renderLanding(){
     return b;
   }
   const nav = el('nav',{class:'landing-nav', 'aria-label':'Main'},[
-    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), hasLandingReviews() ? navButton('Reviews','reviews') : null, navButton('About Us','about'), navButton('Contact','contact')
+    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), hasLandingReviews() ? navButton('Reviews','reviews') : null, navButton('About Us','about'), contactShown() ? navButton('Contact','contact') : null
   ]);
 
   const headerActions = el('div',{class:'landing-header-actions'},[
@@ -947,7 +955,7 @@ function renderLanding(){
   // ---- about + contact us (both edited in the admin panel under Site settings) ----
   const ci = contactInfo();
   wrap.appendChild(el('section',{class:'landing-section', id:'about'},[
-    el('div',{class:'about-wrap'},[
+    el('div',{class:'about-wrap' + (contactShown() ? '' : ' about-wrap-solo')},[
       el('div',{class:'about-main'},[
         el('div',{class:'section-head'},[
           el('span',{class:'eyebrow'},['About Us']),
@@ -956,15 +964,16 @@ function renderLanding(){
         el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t]))),
         renderAboutPhotos()
       ]),
-      el('aside',{class:'contact-panel', id:'contact', 'aria-labelledby':'contact-title'},[
+      // Shown or hidden (as a whole, or detail by detail) in the admin panel under Site settings.
+      contactShown() ? el('aside',{class:'contact-panel', id:'contact', 'aria-labelledby':'contact-title'},[
         el('h3',{class:'contact-panel-title', id:'contact-title'},[ci.title]),
         ci.intro ? el('p',{class:'contact-panel-intro'},[ci.intro]) : null,
-        el('div',{class:'contact-list'},[
-          contactCard(ICON_PIN,   'Address',        el('p',{},[ci.address])),
-          contactCard(ICON_PHONE, 'Phone',          ci.phoneHref ? el('a',{href:ci.phoneHref},[ci.phone]) : el('p',{},[ci.phone])),
-          contactCard(ICON_MAIL,  'E-mail Address', ci.emailHref ? el('a',{href:ci.emailHref},[ci.email]) : el('p',{},[ci.email]))
-        ])
-      ])
+        ci.address || ci.phone || ci.email ? el('div',{class:'contact-list'},[
+          ci.address ? contactCard(ICON_PIN,   'Address',        el('p',{},[ci.address])) : null,
+          ci.phone ? contactCard(ICON_PHONE, 'Phone',          ci.phoneHref ? el('a',{href:ci.phoneHref},[ci.phone]) : el('p',{},[ci.phone])) : null,
+          ci.email ? contactCard(ICON_MAIL,  'E-mail Address', ci.emailHref ? el('a',{href:ci.emailHref},[ci.email]) : el('p',{},[ci.email])) : null
+        ]) : null
+      ]) : null
     ])
   ]));
 
@@ -993,7 +1002,7 @@ function renderLanding(){
       ]),
       el('div',{class:'site-foot-links'},[
         footLink('Exams','exams'), footLink('Features','features'), footLink('How it works','how'),
-        hasLandingReviews() ? footLink('Reviews','reviews') : null, footLink('About Us','about'), footLink('Contact','contact'),
+        hasLandingReviews() ? footLink('Reviews','reviews') : null, footLink('About Us','about'), contactShown() ? footLink('Contact','contact') : null,
         authLink('login','foot-link',['Sign in'])
       ])
     ]),
