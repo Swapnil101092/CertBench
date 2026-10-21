@@ -139,9 +139,31 @@ test('verification: unknown or malformed sign-up ids are refused', async () => {
 });
 
 test('forgot-password does not reveal whether an email exists', async () => {
-  const r = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: 'nobody-here@example.com' } });
-  assert.equal(r.status, 200);
-  assert.ok(!r.data.resetToken);
+  const u = validUser(); await srv.signUp(u);
+  const known = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: u.email } });
+  const unknown = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: 'nobody-here@example.com' } });
+  assert.equal(unknown.status, 200);
+  // Same fields either way (devOtp only exists on a server with no email provider).
+  const keys = (d) => Object.keys(d).filter(k => k !== 'devOtp').sort();
+  assert.deepEqual(keys(unknown.data), keys(known.data));
+  assert.ok(unknown.data.resetToken);
+  // The unknown email's token fails exactly like a wrong code.
+  const bad = { resetToken: unknown.data.resetToken, code: '123456', newPassword: 'NewPass#456' };
+  const wrong = await srv.api('/auth/reset-password', { method: 'POST', body: bad });
+  const realWrong = await srv.api('/auth/reset-password', { method: 'POST', body: { ...bad, resetToken: known.data.resetToken, code: known.data.devOtp === '123456' ? '654321' : '123456' } });
+  assert.equal(wrong.status, 400);
+  assert.deepEqual(wrong.data, realWrong.data);
+});
+
+test('password reset codes are capped per account per hour', async () => {
+  const u = validUser(); await srv.signUp(u);
+  const sent = [];
+  for(let i = 0; i < 7; i++){
+    const r = await srv.api('/auth/forgot-password', { method: 'POST', body: { email: u.email } });
+    assert.equal(r.status, 200);
+    sent.push(!!r.data.devOtp);
+  }
+  assert.deepEqual(sent, [true, true, true, true, true, false, false]);
 });
 
 test('login with wrong password or unknown user gives the same 401', async () => {

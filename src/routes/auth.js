@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { signSessionToken, signResetToken, verifyToken, requireAuth, isAdminUser } = require('../auth');
@@ -36,8 +37,12 @@ function takenField({ username, email, mobile }){
 }
 
 function genOtp(){
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(crypto.randomInt(100000, 1000000));
 }
+
+// At most this many password-reset codes per account per hour. Stops someone from flooding a
+// person's inbox, or from requesting code after code to keep guessing.
+const MAX_RESET_CODES_PER_HOUR = 5;
 
 function publicUser(u){
   return { id: u.id, name: u.name, email: u.email, mobile: u.mobile, username: u.username, isAdmin: isAdminUser(u),
@@ -189,12 +194,23 @@ router.post('/forgot-password', async (req, res) => {
   const trimmedEmail = String(email).trim().toLowerCase();
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(trimmedEmail);
 
-  // Always respond the same way whether or not the email exists, so this
-  // endpoint can't be used to check which emails are registered.
-  const genericResponse = { message: 'If that email is registered, a reset code has been sent.' };
+  // Always respond the same way whether or not the email exists (same fields, a reset token
+  // either way), so this endpoint can't be used to check which emails are registered.
+  const generic = (userId) => ({
+    message: 'If that email is registered, a reset code has been sent.',
+    // An unknown email gets a token for no account, which no code will ever match.
+    resetToken: signResetToken({ id: userId || 0 }),
+    expiresInSeconds: 600
+  });
 
-  if(!user){
-    return res.json(genericResponse);
+  if(!user) return res.json(generic(null));
+
+  const recent = db.prepare(`
+    SELECT COUNT(*) AS n FROM otps WHERE user_id = ? AND purpose = 'password_reset' AND created_at >= datetime('now', '-1 hour')
+  `).get(user.id).n;
+  if(recent >= MAX_RESET_CODES_PER_HOUR){
+    console.warn(`[AUTH] Password reset limit reached for user ${user.id}; no new code sent.`);
+    return res.json(generic(user.id));
   }
 
   const code = genOtp();
@@ -204,18 +220,15 @@ router.post('/forgot-password', async (req, res) => {
     INSERT INTO otps (user_id, purpose, code_hash, expires_at) VALUES (?, 'password_reset', ?, ?)
   `).run(user.id, codeHash, expiresAt);
 
-  const resetToken = signResetToken(user);
-
   try{
     const result = await sendPasswordResetEmail(user.email, code);
-    const response = { ...genericResponse, resetToken, expiresInSeconds: 600 };
+    const response = generic(user.id);
     if(result.devFallback) response.devOtp = code;
     return res.json(response);
   }catch(err){
+    // Same response as always; the failure is only logged for the operator.
     console.error('Password reset email failed:', err.message);
-    // Still return the generic response — don't reveal whether the email
-    // exists via a different error path — but log it for the operator.
-    return res.json(genericResponse);
+    return res.json(generic(user.id));
   }
 });
 
@@ -239,7 +252,8 @@ router.post('/reset-password', (req, res) => {
   `).get(payload.sub);
 
   if(!otpRow){
-    return res.status(400).json({ error: 'No active reset code found. Please request a new one.' });
+    // Also the answer for a decoy token (unknown email), so it reads exactly like a wrong code.
+    return res.status(400).json({ error: 'That code doesn’t match. Please try again.' });
   }
   if(new Date(otpRow.expires_at).getTime() < Date.now()){
     return res.status(400).json({ error: 'This code has expired. Please request a new one.' });

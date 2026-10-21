@@ -19,6 +19,15 @@ function isConfigured(){
   return !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
 }
 
+// The free "dev mode" checkout is for local use only. On a live server (NODE_ENV=production, or
+// running on Railway) missing keys must not make every paid exam free, so it is refused there
+// unless ALLOW_DEV_PAYMENTS=1 is set on purpose. ALLOW_DEV_PAYMENTS=0 refuses it anywhere.
+function devPaymentsAllowed(){
+  if(process.env.ALLOW_DEV_PAYMENTS === '1') return true;
+  if(process.env.ALLOW_DEV_PAYMENTS === '0') return false;
+  return !(process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_ENVIRONMENT);
+}
+
 let razorpayClient = null;
 function getClient(){
   if(!isConfigured()) return null;
@@ -40,6 +49,7 @@ async function createOrder(amountPaise, receipt){
   const client = getClient();
 
   if(!client){
+    if(!devPaymentsAllowed()) throw new Error('Razorpay keys are not set (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET); free dev checkout is off on a live server.');
     // Dev fallback — no real gateway configured.
     const fakeOrderId = 'dev_order_' + crypto.randomBytes(10).toString('hex');
     return { orderId: fakeOrderId, devMode: true, keyId: null };
@@ -72,4 +82,4 @@ function verifySignature(orderId, paymentId, signature){
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { isConfigured, createOrder, verifySignature };
+module.exports = { isConfigured, devPaymentsAllowed, createOrder, verifySignature };
