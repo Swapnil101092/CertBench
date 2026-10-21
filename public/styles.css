@@ -304,8 +304,8 @@ main{ flex:1; display:flex; flex-direction:column; }
 
 /* ============ EXAM LIST (signed in) ============ */
 .select-wrap{ flex:1; padding:clamp(1.75rem,4vw,3.25rem) clamp(1rem,4vw,2.5rem); max-width:1120px; margin:0 auto; width:100%; }
-.select-head h1{ font-size:clamp(1.7rem,3.2vw,2.3rem); margin:0 0 .55rem; line-height:1.15; }
-.select-head p{ color:var(--text-dim); margin:0 0 2rem; max-width:62ch; line-height:1.6; }
+.select-head h1{ font-size:clamp(1.45rem,2.5vw,1.85rem); margin:0 0 .5rem; line-height:1.2; }
+.select-head p{ color:var(--text-dim); margin:0 0 1.75rem; max-width:62ch; line-height:1.6; font-size:.95rem; }
 .search-wrap{ margin-bottom:1.75rem; position:relative; max-width:460px; }
 .search-icon{ position:absolute; left:.95rem; top:50%; transform:translateY(-50%); color:var(--text-faint); display:flex; pointer-events:none; }
 .search-input{
