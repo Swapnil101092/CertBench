@@ -168,3 +168,4 @@ textarea.adm-input{ resize:vertical; line-height:1.5; }
 .adm-section-row .adm-inline > input{ margin-top:0; width:5.5rem; }
 .adm-dimmed{ opacity:.5; }
 .adm-field label.adm-check{ display:flex; font-weight:500; margin:.45rem 0 0; }
+.adm-type-filter{ width:auto; min-width:150px; }

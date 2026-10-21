@@ -3,6 +3,7 @@ const db = require('../db');
 const { requireAuth } = require('../auth');
 const { createOrder, verifySignature, isConfigured } = require('../payments');
 const cart = require('../cart');
+const Audience = require('../audience');
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ router.post('/enroll', requireAuth, async (req, res) => {
   const { examSlug } = req.body || {};
   const exam = db.prepare('SELECT * FROM exams WHERE slug = ? AND active = 1').get(examSlug);
   if(!exam) return res.status(404).json({ error: 'Exam not found.' });
+  if(!Audience.allowed(exam, req.userId)) return res.status(403).json({ error: Audience.deniedMessage(exam), audience: exam.audience });
 
   // Already enrolled (paid)? Don't charge twice.
   const existing = db.prepare(`

@@ -5,6 +5,7 @@ const { signSessionToken, signResetToken, verifyToken, requireAuth, isAdminUser 
 const { sendOtpEmail, sendPasswordResetEmail, isConfigured: emailConfigured } = require('../email');
 const sms = require('../sms');
 const registration = require('../registration');
+const Audience = require('../audience');
 
 const router = express.Router();
 
@@ -39,13 +40,14 @@ function genOtp(){
 }
 
 function publicUser(u){
-  return { id: u.id, name: u.name, email: u.email, mobile: u.mobile, username: u.username, isAdmin: isAdminUser(u) };
+  return { id: u.id, name: u.name, email: u.email, mobile: u.mobile, username: u.username, isAdmin: isAdminUser(u),
+           accountType: Audience.isAudience(u.account_type) ? u.account_type : null };
 }
 
 // ---- POST /api/auth/register  (step 1: check the details, send codes to the email and mobile) ----
 // Nothing is created yet: the account only exists once both codes are confirmed (step 2).
 router.post('/register', async (req, res) => {
-  const { name, email, mobile, username, password } = req.body || {};
+  const { name, email, mobile, username, password, accountType } = req.body || {};
 
   // Check every field (not just the first bad one) so the form can highlight all problems at once.
   const fields = {};
@@ -54,7 +56,10 @@ router.post('/register', async (req, res) => {
   const mobileErr = checkMobile(mobile); if(mobileErr) fields.mobile = mobileErr;
   const userErr = checkUsername(username); if(userErr) fields.username = userErr;
   const pwErr = checkPassword(password, typeof username === 'string' ? username : ''); if(pwErr) fields.password = pwErr;
-  const order = ['name', 'email', 'mobile', 'username', 'password'];
+  // Student or IT Professional (decides which certificates they see). The sign-up form always asks;
+  // left out, the account sees everything and is asked on its first sign-in.
+  if(accountType !== undefined && accountType !== null && !Audience.isAudience(accountType)) fields.accountType = 'Choose Student or IT Professional.';
+  const order = ['accountType', 'name', 'email', 'mobile', 'username', 'password'];
   const firstBad = order.find(k => fields[k]);
   if(firstBad){
     return res.status(400).json({ error: fields[firstBad], fields });
@@ -72,7 +77,7 @@ router.post('/register', async (req, res) => {
   const withMobile = sms.isConfigured() || !emailConfigured();
   const pending = registration.create({
     name: trimmedName, email: trimmedEmail, mobile: digits, username: uname,
-    passwordHash: bcrypt.hashSync(password, 10), withMobile
+    passwordHash: bcrypt.hashSync(password, 10), withMobile, accountType: accountType || null
   });
 
   let emailResult, smsResult = null;
@@ -126,9 +131,9 @@ router.post('/register/verify', (req, res) => {
   let info;
   try{
     info = db.prepare(`
-      INSERT INTO users (name, email, mobile, username, password_hash, email_verified, mobile_verified)
-      VALUES (?, ?, ?, ?, ?, 1, ?)
-    `).run(p.name, p.email, p.mobile, p.username, p.password_hash, p.mobile_code_hash ? 1 : 0);
+      INSERT INTO users (name, email, mobile, username, password_hash, email_verified, mobile_verified, account_type)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(p.name, p.email, p.mobile, p.username, p.password_hash, p.mobile_code_hash ? 1 : 0, p.account_type || null);
   }catch(err){
     registration.remove(p.id);
     return res.status(409).json({ error: 'That username or email is already registered.', restart: true });
@@ -253,6 +258,16 @@ router.post('/reset-password', (req, res) => {
   db.prepare('UPDATE users SET password_hash = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(passwordHash, payload.sub);
 
   res.json({ message: 'Password updated. You can now sign in with your new password.' });
+});
+
+// ---- PUT /api/auth/account-type  (auth) { accountType: 'student' | 'professional' } ----
+// Asked once of accounts made before the split, and changeable any time from the account menu.
+router.put('/account-type', requireAuth, (req, res) => {
+  const { accountType } = req.body || {};
+  if(!Audience.isAudience(accountType)) return res.status(400).json({ error: 'Choose Student or IT Professional.' });
+  db.prepare('UPDATE users SET account_type = ? WHERE id = ?').run(accountType, req.userId);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+  res.json({ user: publicUser(user) });
 });
 
 // ---- GET /api/auth/me  (auth) ----

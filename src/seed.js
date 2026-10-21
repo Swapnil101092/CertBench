@@ -723,13 +723,13 @@ function assignSets(poolSize, perSet = QUESTIONS_PER_SET){
 // `only` (optional): a list of slugs to seed, leaving every other built-in exam alone.
 function seed({ only } = {}){
   const insertExam = db.prepare(`
-    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections)
-    VALUES (@slug, @name, @description, @duration_minutes, @pass_pct, @color, @short_label, @price_inr_paise, @sections)
+    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, audience)
+    VALUES (@slug, @name, @description, @duration_minutes, @pass_pct, @color, @short_label, @price_inr_paise, @sections, @audience)
     ON CONFLICT(slug) DO UPDATE SET
       name=excluded.name, description=excluded.description,
       duration_minutes=excluded.duration_minutes, pass_pct=excluded.pass_pct,
       color=excluded.color, short_label=excluded.short_label, price_inr_paise=excluded.price_inr_paise,
-      sections=excluded.sections
+      sections=excluded.sections, audience=excluded.audience
   `);
   const getExamId = db.prepare('SELECT id FROM exams WHERE slug = ?');
   const deleteQuestions = db.prepare('DELETE FROM questions WHERE exam_id = ?');
@@ -762,7 +762,8 @@ function seed({ only } = {}){
         duration_minutes: bank.duration_minutes, pass_pct: bank.pass_pct,
         color: bank.color, short_label: bank.short_label,
         price_inr_paise: Math.round((bank.price_inr || 0) * 100),
-        sections: bank.sections ? JSON.stringify(bank.sections) : null
+        sections: bank.sections ? JSON.stringify(bank.sections) : null,
+        audience: bank.audience || 'professional'
       });
       const examId = getExamId.get(bank.slug).id;
       deleteQuestions.run(examId);

@@ -15,7 +15,8 @@ test.before(async () => {
 test.after(async () => { if(browser) await browser.close(); if(srv) srv.stop(); });
 
 async function signedInPage(viewport, opts){
-  const u = validUser();
+  // Admins aren't asked for an account type; everyone else picks one at sign-up.
+  const u = validUser(opts && opts.admin ? {} : { accountType: 'professional' });
   await srv.signUp(u);
   if(opts && opts.admin) srv.sql('UPDATE users SET is_admin = 1 WHERE username = ?', u.username);
   const token = (await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } })).data.token;

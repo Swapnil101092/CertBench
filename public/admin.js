@@ -238,7 +238,7 @@ function viewExams(){
     if(!rows.length) tbody.appendChild(el('tr', {}, [ el('td', { colspan: '7', class: 'adm-empty' }, ['No certificates match “' + S.examQuery.trim() + '”.']) ]));
     rows.forEach(function(e){
       tbody.appendChild(el('tr', {}, [
-        el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug]) ]) ]) ]),
+        el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug + ' · for ' + (e.audience === 'student' ? 'Students' : 'IT Professionals')]) ]) ]) ]),
         el('td', {}, [rupees(e.priceInr)]),
         el('td', {}, [e.durationMinutes + ' min · ' + e.passPct + '%']),
         el('td', {}, [ el('span', { class: 'adm-mono' }, [e.setCounts.join(' / ')]), ' (' + e.totalQuestions + ' total)' ]),
@@ -270,7 +270,7 @@ function examFormFields(exam, creating){
       el('div', { class: 'adm-err', 'data-for': key })
     ]);
   }
-  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '', sections: null };
+  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '', sections: null, audience: 'professional' };
   inputs.name = el('input', { class: 'adm-input', type: 'text', maxlength: '80', value: e.name });
   inputs.description = el('textarea', { class: 'adm-input', rows: '3', maxlength: '300', value: e.description });
   inputs.shortLabel = el('input', { class: 'adm-input adm-narrow', type: 'text', maxlength: '4', value: e.shortLabel });
@@ -278,6 +278,7 @@ function examFormFields(exam, creating){
   inputs.durationMinutes = el('input', { class: 'adm-input adm-narrow', type: 'number', min: '5', max: '300', step: '1', value: String(e.durationMinutes) });
   inputs.passPct = el('input', { class: 'adm-input adm-narrow', type: 'number', min: '1', max: '100', step: '1', value: String(e.passPct) });
   inputs.priceInr = el('input', { class: 'adm-input adm-narrow', type: 'number', min: '0', max: '100000', step: '0.01', value: String(e.priceInr) });
+  inputs.audience = audienceSelect(e.audience || 'professional', false);
 
   var slugField = null;
   if(creating){
@@ -315,6 +316,7 @@ function examFormFields(exam, creating){
       field('passPct', 'Pass mark (%)', inputs.passPct),
       field('priceInr', 'Price (₹)', inputs.priceInr, '0 = free')
     ]),
+    field('audience', 'Who is it for?', inputs.audience, 'Students and IT Professionals each see only their own certificates. Admins see all of them.'),
     sections.node
   ]);
 
@@ -325,7 +327,7 @@ function examFormFields(exam, creating){
       var body = {
         name: inputs.name.value, description: inputs.description.value, shortLabel: inputs.shortLabel.value,
         color: inputs.color.value, durationMinutes: num(inputs.durationMinutes), passPct: num(inputs.passPct), priceInr: num(inputs.priceInr),
-        sections: sections.read()
+        sections: sections.read(), audience: inputs.audience.value
       };
       if(inputs.slug) body.slug = inputs.slug.value;
       return body;
@@ -787,12 +789,27 @@ function buildImportPanel(){
   ]);
 }
 
+// Students / IT Professionals (which certificates an account sees).
+var ACCOUNT_TYPE_LABELS = { student: 'Student', professional: 'IT Professional' };
+function audienceSelect(value, allowNone){
+  var opts = [];
+  if(allowNone) opts.push(el('option', { value: '' }, ['Not chosen yet (sees everything)']));
+  opts.push(el('option', { value: 'professional' }, [allowNone ? 'IT Professional' : 'IT Professionals']));
+  opts.push(el('option', { value: 'student' }, [allowNone ? 'Student' : 'Students']));
+  var sel = el('select', { class: 'adm-input' }, opts);
+  sel.value = value || '';
+  return sel;
+}
+function typePill(u){
+  return u.accountType ? el('span', { class: 'adm-pill' }, [ACCOUNT_TYPE_LABELS[u.accountType]]) : el('span', { class: 'adm-hint' }, ['Not chosen']);
+}
+
 // ---------------------------------------------------------------- users
 function loadUsers(page){
-  return api('/users?page=' + (page || 1) + '&q=' + encodeURIComponent(S.userQuery)).then(function(d){ S.users = d; });
+  return api('/users?page=' + (page || 1) + '&q=' + encodeURIComponent(S.userQuery) + '&type=' + encodeURIComponent(S.userType || '')).then(function(d){ S.users = d; });
 }
 function rolePill(u){
-  if(!u.isAdmin) return el('span', { class: 'adm-pill' }, ['Student']);
+  if(!u.isAdmin) return el('span', { class: 'adm-pill' }, ['User']);
   var how = u.adminVia.map(function(v){ return v === 'panel' ? 'panel' : 'ADMIN_EMAILS setting'; }).join(' + ');
   return el('span', { class: 'adm-pill adm-pill-live', title: 'Admin access comes from: ' + how }, ['Admin']);
 }
@@ -802,17 +819,18 @@ function buildUsersTable(){
   var d = S.users;
   var box = el('div', { id: 'adm-users-table' });
   if(!d.users.length){
-    box.appendChild(el('p', { class: 'adm-empty' }, [S.userQuery ? 'No users match “' + S.userQuery + '”.' : 'No users yet.']));
+    box.appendChild(el('p', { class: 'adm-empty' }, [S.userQuery || S.userType ? 'No users match.' : 'No users yet.']));
     return box;
   }
   box.appendChild(el('div', { class: 'adm-card adm-table-wrap' }, [ el('table', { class: 'adm-table' }, [
-    el('thead', {}, [ el('tr', {}, ['Name', 'Email', 'Mobile', 'Joined (UTC)', 'Role', 'Activity', ''].map(function(h){ return el('th', {}, [h]); })) ]),
+    el('thead', {}, [ el('tr', {}, ['Name', 'Email', 'Mobile', 'Joined (UTC)', 'Type', 'Role', 'Activity', ''].map(function(h){ return el('th', {}, [h]); })) ]),
     el('tbody', {}, d.users.map(function(u){
       return el('tr', {}, [
         el('td', {}, [ el('div', { class: 'adm-strong' }, [u.name, ' ', youTag(u), ' ', u.activeNow ? el('span', { class: 'adm-pill adm-pill-live', title: 'Used the site in the last few minutes' }, ['Active now']) : null]), el('div', { class: 'adm-hint' }, ['@' + u.username]) ]),
         el('td', {}, [u.email]),
         el('td', {}, [u.mobile]),
         el('td', {}, [String(u.createdAt || '').slice(0, 10)]),
+        el('td', {}, [typePill(u)]),
         el('td', {}, [rolePill(u)]),
         el('td', {}, [u.paidEnrollments + ' paid · ' + u.attempts + ' attempts']),
         el('td', {}, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ openUser(u.id); } }, ['Manage']) ])
@@ -848,7 +866,15 @@ function viewUsers(){
       guard(loadUsers(1).then(refreshUsersTable));      // only the table is redrawn, so typing isn't interrupted
     }, 300);
   });
-  wrap.appendChild(el('div', { class: 'adm-toolbar' }, [ search, el('span', { class: 'adm-hint' }, [S.users.total + ' total']) ]));
+  var typeFilter = el('select', { class: 'adm-input adm-type-filter', 'aria-label': 'Account type' }, [
+    el('option', { value: '' }, ['All types']),
+    el('option', { value: 'student' }, ['Students']),
+    el('option', { value: 'professional' }, ['IT Professionals']),
+    el('option', { value: 'none' }, ['Not chosen yet'])
+  ]);
+  typeFilter.value = S.userType || '';
+  typeFilter.addEventListener('change', function(){ S.userType = typeFilter.value; guard(loadUsers(1).then(refreshUsersTable)); });
+  wrap.appendChild(el('div', { class: 'adm-toolbar' }, [ search, typeFilter, el('span', { class: 'adm-hint' }, [S.users.total + ' total']) ]));
   wrap.appendChild(buildUsersTable());
   return wrap;
 }
@@ -859,7 +885,8 @@ function userFormFields(u, creating){
     email: el('input', { class: 'adm-input', type: 'email', maxlength: '254', value: u ? u.email : '' }),
     mobile: el('input', { class: 'adm-input', type: 'tel', maxlength: '14', value: u ? u.mobile : '' }),
     // New accounts: 3-20 letters. Editing allows up to 32 so older usernames still fit.
-    username: el('input', { class: 'adm-input', type: 'text', maxlength: creating ? '20' : '32', value: u ? u.username : '' })
+    username: el('input', { class: 'adm-input', type: 'text', maxlength: creating ? '20' : '32', value: u ? u.username : '' }),
+    accountType: audienceSelect(u ? u.accountType : '', true)
   };
   if(creating) inputs.password = el('input', { class: 'adm-input', type: 'text', maxlength: '64', autocomplete: 'new-password', value: '' });
   function f(key, label, hint){
@@ -868,6 +895,7 @@ function userFormFields(u, creating){
   var node = el('div', { class: 'adm-form' }, [
     el('div', { class: 'adm-grid2' }, [ f('name', 'Full name'), f('username', 'Username', 'Used to sign in. 3-20 letters; single dots or underscores between letters. No numbers.') ]),
     el('div', { class: 'adm-grid2' }, [ f('email', 'Email', 'Login codes are sent here.'), f('mobile', 'Mobile (10 digits)') ]),
+    f('accountType', 'Account type', 'Decides which certificates they see. Not chosen = they are asked on their next sign-in.'),
     creating ? f('password', 'Starting password', '8-64 characters with an uppercase letter, a lowercase letter, a number and a special character; must not contain the username. Share it with them privately; they can change it later with “Forgot password?”.') : null
   ]);
   return {
@@ -893,7 +921,7 @@ function viewUserNew(){
     el('h1', { class: 'adm-h1' }, ['Add a user']),
     el('div', { class: 'adm-card' }, [
       form.node,
-      el('p', { class: 'adm-hint' }, ['They join as a normal student. You can make them an admin afterwards.']),
+      el('p', { class: 'adm-hint' }, ['They join as a normal user. You can make them an admin afterwards.']),
       el('div', { class: 'adm-actions' }, [
         el('button', { class: 'btn btn-primary', type: 'button', onclick: function(){
           guard(api('/users', { method: 'POST', body: form.read() }).then(function(d){

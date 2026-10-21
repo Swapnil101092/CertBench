@@ -107,6 +107,50 @@ function topbar(){
   return el('div',{class:'topbar'},[ brandLogo(), el('div',{class:'topbar-right'},[ accountMenu(themeLabel) ]) ]);
 }
 
+// ---- Account type: Students and IT Professionals each see their own certificates ----
+const ACCOUNT_TYPES = {
+  student:      { label:'Student',         plural:'Students',         sub:'Engineering entrance practice, such as VITEEE' },
+  professional: { label:'IT Professional', plural:'IT Professionals', sub:'Cloud, DevOps, security and other IT certifications' }
+};
+function otherAccountType(t){ return t === 'student' ? 'professional' : 'student'; }
+// Who an exam is for (older servers didn't send it: entrance exams are for Students).
+function audienceOf(x){ return x.audience || (isJee(x) ? 'student' : 'professional'); }
+async function setAccountType(type){
+  const d = await api('/auth/account-type', { method:'PUT', body:{ accountType:type } });
+  state.currentUser = d.user;
+  await loadExams();
+  if(state.screen === 'sets') state.screen = 'select';
+  render();
+}
+function switchAccountType(){
+  const u = state.currentUser;
+  const next = otherAccountType(u.accountType);
+  const ok = window.confirm('Switch to ' + (next === 'student' ? 'a ' : 'an ') + ACCOUNT_TYPES[next].label + ' account? You’ll see certificates for ' +
+    ACCOUNT_TYPES[next].plural + ' instead. Certificates you have already bought stay available.');
+  if(ok) setAccountType(next).catch(e => window.alert(e.message || 'Could not switch. Please try again.'));
+}
+// Accounts from before the split are asked once which they are (admins see everything, so they aren't asked).
+function renderAccountTypePrompt(){
+  let busy = false;
+  const err = el('p',{class:'type-prompt-error', role:'alert'});
+  function choose(t){
+    if(busy) return; busy = true;
+    setAccountType(t).catch(e => { busy = false; err.textContent = e.message || 'Could not save. Please try again.'; });
+  }
+  return el('div',{class:'type-prompt', role:'dialog', 'aria-modal':'true', 'aria-labelledby':'type-prompt-title'},[
+    el('div',{class:'type-prompt-card'},[
+      el('h2',{id:'type-prompt-title'},['Which best describes you?']),
+      el('p',{class:'type-prompt-sub'},['We’ll show you the certificates that fit. You can switch any time from the menu under your name.']),
+      el('div',{class:'type-options'}, Object.keys(ACCOUNT_TYPES).map(t => {
+        const b = el('button',{class:'type-option', type:'button', 'data-type':t},[ el('strong',{},[ACCOUNT_TYPES[t].label]), el('span',{},[ACCOUNT_TYPES[t].sub]) ]);
+        b.addEventListener('click', () => choose(t));
+        return b;
+      })),
+      err
+    ])
+  ]);
+}
+
 // The account menu: the avatar opens a dropdown (click or tap; also hover on devices with a mouse)
 // with Admin, Cart, My results, the theme switch and Sign out.
 function accountMenu(themeLabel){
@@ -128,7 +172,8 @@ function accountMenu(themeLabel){
     menu.appendChild(b);
     return b;
   }
-  menu.appendChild(el('div',{class:'account-head'},[ el('b',{},[u.name]), u.email ? el('span',{},[u.email]) : null ]));
+  menu.appendChild(el('div',{class:'account-head'},[ el('b',{},[u.name]), u.email ? el('span',{},[u.email]) : null,
+    u.accountType ? el('span',{class:'account-type'},[ACCOUNT_TYPES[u.accountType].label + ' account']) : null ]));
   if(!inExam){
     if(u.isAdmin){
       const a = el('a',{class:'account-item', href:'/admin', role:'menuitem'},['Admin']);
@@ -137,6 +182,7 @@ function accountMenu(themeLabel){
     item(el('span',{class:'cart-label'},['Cart']), openCart, 'cart-btn' + (state.screen === 'cart' ? ' on' : ''),
       n ? el('span',{class:'cart-count'},[String(n)]) : null).setAttribute('aria-label', 'Cart, ' + plural(n, 'certificate'));
     item('My results', loadHistory);
+    if(u.accountType) item('Switch to ' + ACCOUNT_TYPES[otherAccountType(u.accountType)].label, switchAccountType);
   }
   item(themeLabel, toggleTheme);
   menu.appendChild(el('div',{class:'account-sep', role:'separator'}));
@@ -526,7 +572,8 @@ function landingExamList(){
     return state.landingExams.map(x => {
       const known = LANDING_EXAMS.find(k => k.label === x.short_label);
       return { label:x.short_label, short: known ? known.short : x.name, name:x.name, color:x.color, price:x.price_inr_paise,
-               desc:x.description || '', minutes:x.duration_minutes, sets:x.set_count, perSet:x.question_count, pass:x.pass_pct };
+               desc:x.description || '', minutes:x.duration_minutes, sets:x.set_count, perSet:x.question_count, pass:x.pass_pct,
+               audience:x.audience };
     });
   }
   return LANDING_EXAMS.map(x => ({ label:x.label, short:x.short, name:x.name, color:x.color, price:null, desc:'' }));
@@ -798,9 +845,14 @@ function renderLanding(){
   ]));
 
   // ---- exams: real exams, real prices ----
-  // IT certifications get category tabs, a search box and a short "featured" list; JEE has its own section.
-  const itExams = navExams.filter(x => !isJee(x));
-  const jeeExams = navExams.filter(isJee);
+  // IT certifications get category tabs, a search box and a short "featured" list; Students' exams
+  // (JEE, VITEEE) have their own section. Visitors can show just one group with the switch below.
+  const itExams = navExams.filter(x => audienceOf(x) === 'professional');
+  const jeeExams = navExams.filter(x => audienceOf(x) === 'student');
+  const both = itExams.length && jeeExams.length;
+  if(!both) state.landingAudience = 'all';
+  else if(state.landingAudience === undefined) state.landingAudience = safeGetLS('certbench-audience') || 'all';
+  if(state.landingAudience !== 'all' && !ACCOUNT_TYPES[state.landingAudience]) state.landingAudience = 'all';
   const FEATURED = 6;
 
   function landingCard(x, commonPass){
@@ -818,6 +870,26 @@ function renderLanding(){
     card.style.setProperty('--c', safeColor(x.color));
     return card;
   }
+
+  // "Show exams for: Everyone / IT Professionals / Students". The choice is remembered and pre-selects
+  // the account type on the sign-up form.
+  let audienceBar = null;
+  if(both){
+    audienceBar = el('div',{class:'audience-switch', role:'radiogroup', 'aria-label':'Show exams for'},[ el('span',{class:'audience-switch-label'},['Show exams for']) ]);
+    [['all','Everyone'], ['professional', ACCOUNT_TYPES.professional.plural], ['student', ACCOUNT_TYPES.student.plural]].forEach(([id, label]) => {
+      const b = el('button',{class:'audience-opt' + (state.landingAudience === id ? ' on' : ''), type:'button', role:'radio', 'aria-checked': String(state.landingAudience === id)},[label]);
+      b.addEventListener('click', () => {
+        state.landingAudience = id;
+        if(id === 'all') safeRemoveLS('certbench-audience'); else safeSetLS('certbench-audience', id);
+        render();
+        scrollToId('audience');
+      });
+      audienceBar.appendChild(b);
+    });
+  }
+  const showIt = state.landingAudience !== 'student';
+  const showStudent = state.landingAudience !== 'professional';
+  if(audienceBar) wrap.appendChild(el('div',{class:'audience-bar-wrap', id:'audience'},[audienceBar]));
 
   const itFacts = commonExamFacts(itExams);
   const examsSec = el('section',{class:'landing-section', id:'exams'},[
@@ -884,16 +956,16 @@ function renderLanding(){
     drawLandingExams();
   });
   drawLandingExams();
-  wrap.appendChild(examsSec);
+  if(showIt) wrap.appendChild(examsSec);
 
   // ---- Engineering entrance (JEE Main, VITEEE): a different audience, so it gets its own short section ----
-  if(jeeExams.length){
+  if(jeeExams.length && showStudent){
     const jeeFacts = commonExamFacts(jeeExams);
     const allFree = jeeExams.every(x => x.price === 0);
     const entrance = entranceLabel(jeeExams);
     const jeeSec = el('section',{class:'landing-section', id:'jee'},[
       el('div',{class:'section-head'},[
-        el('span',{class:'eyebrow'},[entrance === 'JEE Main' ? 'JEE Main' : 'Engineering entrance']),
+        el('span',{class:'eyebrow'},['For students']),
         el('h2',{class:'section-title'},[(allFree ? 'Free ' : '') + entrance + ' practice']),
         el('p',{class:'section-sub'},['Original ' + entrance + '-style questions, weighted to the chapters asked most often. ' + jeeFacts.text])
       ])
@@ -1187,6 +1259,35 @@ function renderRegister(){
 
   const form = el('form',{novalidate:'novalidate'});
   const inputs = {}, errEls = {};
+
+  // Student or IT Professional: decides which certificates the account sees. Pre-selected from the
+  // home page's "Show exams for" switch when the visitor used it.
+  if(!draft.values.accountType && ACCOUNT_TYPES[safeGetLS('certbench-audience')]) draft.values.accountType = safeGetLS('certbench-audience');
+  const typeErr = el('div',{class:'field-error', id:'reg-type-error', role:'alert'},[]);
+  const typeOpts = Object.keys(ACCOUNT_TYPES).map(t => {
+    const b = el('button',{class:'type-option', type:'button', role:'radio', 'data-type':t, 'aria-checked': String(draft.values.accountType === t)},[
+      el('strong',{},[ACCOUNT_TYPES[t].label]), el('span',{},[ACCOUNT_TYPES[t].sub])
+    ]);
+    b.addEventListener('click', ()=>{
+      draft.values.accountType = t;
+      typeOpts.forEach(o => o.setAttribute('aria-checked', String(o.getAttribute('data-type') === t)));
+      showTypeError(null);
+    });
+    return b;
+  });
+  const typeField = el('div',{class:'field', 'data-field':'accountType'},[
+    el('div',{class:'field-label', id:'reg-type-label'},['I am a']),
+    el('div',{class:'type-options', role:'radiogroup', 'aria-labelledby':'reg-type-label', 'aria-describedby':'reg-type-error'}, typeOpts),
+    typeErr
+  ]);
+  function showTypeError(msg){
+    draft.errors.accountType = msg || '';
+    typeErr.textContent = msg || '';
+    typeField.classList.toggle('has-error', !!msg);
+  }
+  form.appendChild(typeField);
+  if(draft.errors.accountType) showTypeError(draft.errors.accountType);
+
   FIELDS.forEach(f=>{
     const errId = f.id + '-error', hintId = f.id + '-hint';
     const input = el('input',{id:f.id, name:f.key, type:f.type, autocomplete:f.auto, maxlength:f.max,
@@ -1277,10 +1378,14 @@ function renderRegister(){
       showError(f.key, msg);
       if(msg && !firstBad) firstBad = f.key;
     });
+    if(!draft.values.accountType){
+      showTypeError('Choose Student or IT Professional.');
+      if(!firstBad) firstBad = 'accountType';
+    }
     if(firstBad){
       state.registerError = 'Please fix the highlighted fields.';
       errorDiv.textContent = state.registerError;
-      inputs[firstBad].focus();
+      (firstBad === 'accountType' ? typeOpts[0] : inputs[firstBad]).focus();
       return;
     }
     const body = {
@@ -1288,7 +1393,8 @@ function renderRegister(){
       email: inputs.email.value.trim(),
       mobile: REG_RULES.cleanMobile(inputs.mobile.value),
       username: inputs.username.value.trim().toLowerCase(),
-      password: inputs.password.value
+      password: inputs.password.value,
+      accountType: draft.values.accountType
     };
 
     state.busy = true; state.registerError=''; render();
@@ -1721,13 +1827,19 @@ function renderSelect(){
   const who = state.currentUser ? state.currentUser.name.split(' ')[0] : '';
   wrap.appendChild(el('div',{class:'select-head'},[
     el('h1',{},[who ? `Choose a mock exam, ${who}` : 'Choose a mock exam']),
-    el('p',{},['Each exam includes ' + (Math.max.apply(null, [0].concat(state.exams.map(e => e.set_count || 0))) || 5) + ' separate practice sets so you can retake it with fresh questions. Answers are graded on the server, so results are trustworthy.'])
+    el('p',{},['Each exam includes ' + (Math.max.apply(null, [0].concat(state.exams.map(e => e.set_count || 0))) || 5) + ' separate practice sets so you can retake it with fresh questions. Answers are graded on the server, so results are trustworthy.']),
+    state.currentUser && state.currentUser.accountType && !state.currentUser.isAdmin ? (function(){
+      const t = state.currentUser.accountType;
+      const sw = el('button',{class:'link-btn', type:'button'},['Switch to ' + ACCOUNT_TYPES[otherAccountType(t)].label]);
+      sw.addEventListener('click', switchAccountType);
+      return el('p',{class:'audience-note'},['Showing certificates for ' + ACCOUNT_TYPES[t].plural + '. ', sw]);
+    })() : null
   ]));
 
   const searchWrap = el('div',{class:'search-wrap'},[ el('span',{class:'search-icon'},[icon(ICON_SEARCH, 18)]) ]);
   const searchInput = el('input',{
     type:'text', class:'search-input',
-    placeholder:'Search exams by name, e.g. "Azure", "AWS", "Kubernetes"…',
+    placeholder: state.currentUser && state.currentUser.accountType === 'student' ? 'Search exams by name…' : 'Search exams by name, e.g. "Azure", "AWS", "Kubernetes"…',
     value: state.examSearch || ''
   });
   searchInput.addEventListener('input', function(){
@@ -2719,6 +2831,8 @@ function render(){
     container.appendChild(el('footer',{class:'app-foot'},['CertBench — practice mock exams. Not affiliated with Microsoft, AWS, or the Cloud Native Computing Foundation.']));
   }
   root.appendChild(container);
+  const cu = state.currentUser;
+  if(cu && !cu.accountType && !cu.isAdmin && state.screen === 'select') root.appendChild(renderAccountTypePrompt());
 
   if(state.screen === 'login'){ const f=document.getElementById('username'); if(f) f.focus(); }
   else if(state.screen === 'register'){ const f=document.getElementById('reg-name'); if(f) f.focus(); }

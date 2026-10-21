@@ -19,7 +19,7 @@ test.before(async () => {
 test.after(async () => { if(browser) await browser.close(); if(srv) srv.stop(); });
 
 test('viteee: sections one at a time, timer moves on, image shown, per-section results', async () => {
-  const u = validUser();
+  const u = validUser({ accountType: 'student' });
   await srv.signUp(u);
   const token = (await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } })).data.token;
   srv.sql("UPDATE exams SET price_inr_paise = 0 WHERE slug = 'viteee'");

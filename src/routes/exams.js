@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, optionalAuth } = require('../auth');
 const Sections = require('../sections');
+const Audience = require('../audience');
 
 const router = express.Router();
 const SET_COUNT = 5;
@@ -20,7 +21,7 @@ function hasPaidEnrollment(userId, examId){
 router.get('/', optionalAuth, (req, res) => {
   const exams = db.prepare(`
     SELECT e.id, e.slug, e.name, e.description, e.duration_minutes, e.pass_pct, e.color, e.short_label,
-           e.price_inr_paise, e.sections,
+           e.price_inr_paise, e.sections, e.audience,
            (SELECT COALESCE(MAX(c), 0) FROM (
               SELECT COUNT(*) AS c FROM questions WHERE exam_id = e.id AND active = 1 GROUP BY set_number
            )) AS question_count,
@@ -39,8 +40,11 @@ router.get('/', optionalAuth, (req, res) => {
     enrolledSlugs = new Set(rows.map(r => r.slug));
   }
 
+  // Students and IT Professionals each see their own certificates (plus any they've already bought).
+  const viewer = Audience.viewerAudience(req.userId);
   res.json({
-    exams: exams.map(e => ({
+    audience: viewer,
+    exams: exams.filter(e => !viewer || e.audience === viewer || enrolledSlugs.has(e.slug)).map(e => ({
       ...e,
       sections: Sections.parse(e.sections),
       enrolled: enrolledSlugs.has(e.slug)
@@ -54,6 +58,7 @@ router.get('/', optionalAuth, (req, res) => {
 router.get('/:slug/sets', requireAuth, (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE slug = ? AND active = 1').get(req.params.slug);
   if(!exam) return res.status(404).json({ error: 'Exam not found.' });
+  if(!Audience.allowed(exam, req.userId)) return res.status(403).json({ error: Audience.deniedMessage(exam), audience: exam.audience });
 
   if(requiresEnrollment(exam) && !hasPaidEnrollment(req.userId, exam.id)){
     return res.status(402).json({ error: 'Please enroll and complete payment before accessing this exam.' });
@@ -103,6 +108,7 @@ router.get('/:slug/sets', requireAuth, (req, res) => {
 router.post('/:slug/start', requireAuth, (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE slug = ? AND active = 1').get(req.params.slug);
   if(!exam) return res.status(404).json({ error: 'Exam not found.' });
+  if(!Audience.allowed(exam, req.userId)) return res.status(403).json({ error: Audience.deniedMessage(exam), audience: exam.audience });
 
   const setNumber = Number(req.body && req.body.setNumber);
   if(!Number.isInteger(setNumber) || setNumber < 1 || setNumber > SET_COUNT){
