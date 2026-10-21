@@ -146,7 +146,41 @@ a.btn-ghost{ color:var(--text); }
   -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
 }
 .topbar-right{ display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
-.user-chip{ display:flex; align-items:center; gap:.55rem; margin-right:.35rem; }
+.user-chip{
+  display:flex; align-items:center; gap:.55rem; padding:.25rem .6rem .25rem .25rem; border-radius:999px;
+  border:1px solid transparent; background:none; color:inherit; font:inherit; cursor:pointer; transition:border-color .15s ease, background .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.user-chip:hover, .account.open .user-chip{ border-color:var(--panel-border); background:var(--chip-bg); }
+.user-caret{ font-size:.7rem; color:var(--text-faint); transition:transform .15s ease; }
+.account.open .user-caret{ transform:rotate(180deg); }
+.avatar{ position:relative; }
+.avatar-badge{
+  position:absolute; top:-.35rem; right:-.45rem; min-width:1.05rem; height:1.05rem; padding:0 .25rem; border-radius:999px;
+  background:var(--accent-warm); color:#1a1300; font-size:.62rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 0 2px var(--bg);
+}
+/* Account dropdown: opens on click/tap, and on hover where there is a mouse. */
+.account{ position:relative; }
+.account-menu{
+  display:none; position:absolute; right:0; top:calc(100% + .45rem); min-width:220px; z-index:60;
+  padding:.4rem; border-radius:14px; border:1px solid var(--panel-border); background:var(--bg-raised);
+  box-shadow:0 18px 40px -18px rgba(0,0,0,.45);
+}
+.account-menu::before{ content:''; position:absolute; left:0; right:0; top:-.5rem; height:.5rem; }   /* keeps hover alive across the gap */
+.account.open .account-menu{ display:block; }
+@media (hover:hover){ .account:not(.no-hover):hover .account-menu{ display:block; } }
+.account-head{ display:flex; flex-direction:column; gap:.1rem; padding:.55rem .7rem .6rem; border-bottom:1px solid var(--hairline); margin-bottom:.3rem; }
+.account-head b{ font-size:.9rem; color:var(--text); }
+.account-head span{ font-size:.78rem; color:var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px; }
+.account-item{
+  display:flex; align-items:center; justify-content:space-between; gap:.6rem; width:100%; text-align:left; padding:.55rem .7rem;
+  border:0; border-radius:9px; background:none; color:var(--text); font:inherit; font-size:.88rem; text-decoration:none; cursor:pointer;
+}
+.account-item:hover, .account-item:focus-visible{ background:var(--chip-bg); outline:none; }
+.account-item.on{ color:var(--accent); }
+.account-item.danger{ color:var(--danger); }
+.account-sep{ height:1px; background:var(--hairline); margin:.3rem .2rem; }
 .avatar{
   width:2rem; height:2rem; border-radius:50%; display:flex; align-items:center; justify-content:center;
   background:var(--accent-gradient); color:#fff; font-weight:700; font-size:.82rem; font-family:var(--display);
@@ -162,7 +196,6 @@ a.btn-ghost{ color:var(--text); }
   .user-name{ display:none; }
   .topbar{ position:static; flex-wrap:nowrap; padding:.7rem 1rem; }
   .topbar-right{ flex-wrap:nowrap; gap:.4rem; }
-  .user-chip{ margin-right:0; }
   .theme-toggle{ padding:.4em .7em; }
 }
 

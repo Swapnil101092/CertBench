@@ -42,9 +42,11 @@ test('cart: add two paid certificates, see the total, pay once, both unlock', as
   assert.equal((await page.textContent('.cart-btn .cart-count')).trim(), '1');
   await card(b.name).locator('.cart-toggle').click();
   await page.reload();
-  await page.waitForSelector('.cart-btn .cart-count');
+  await page.waitForSelector('.cart-btn .cart-count', { state: 'attached' });
+  assert.equal((await page.textContent('.avatar-badge')).trim(), '2', 'the avatar shows how many are in the cart');
   assert.equal((await page.textContent('.cart-btn .cart-count')).trim(), '2');
 
+  await page.click('.user-chip');   // Cart lives in the account menu
   await page.click('.cart-btn');
   await page.waitForSelector('h1:has-text("Your cart")');
   assert.equal(await page.locator('.cart-item').count(), 2);

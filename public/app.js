@@ -97,39 +97,73 @@ function brandLogo(){ return el('div',{class:'brand', role:'img', 'aria-label':'
 
 function topbar(){
   const saved = safeGetLS('certbench-theme');
-  const right = [];
-  if(state.currentUser){
-    const initial = (state.currentUser.name || '?').trim().charAt(0).toUpperCase();
-    right.push(el('span',{class:'user-chip'},[ el('span',{class:'avatar'},[initial]), el('span',{class:'user-name'},[state.currentUser.name]) ]));
-    if(state.currentUser.isAdmin && state.screen !== 'exam' && state.screen !== 'review'){
-      right.push(el('a',{class:'btn-ghost btn btn-sm', href:'/admin'},['Admin']));
-    }
-    if(state.screen !== 'exam' && state.screen !== 'review'){
-      const n = state.cart.length;
-      const cartBtn = el('button',{class:'btn-ghost btn btn-sm cart-btn' + (state.screen === 'cart' ? ' on' : ''), 'aria-label': 'Cart, ' + plural(n, 'certificate')},[
-        icon(ICON_CART, 16), el('span',{class:'cart-label'},['Cart']), n ? el('span',{class:'cart-count'},[String(n)]) : null
-      ]);
-      cartBtn.addEventListener('click', openCart);
-      right.push(cartBtn);
-      const historyBtn = el('button',{class:'btn-ghost btn btn-sm'},['My results']);
-      historyBtn.addEventListener('click', loadHistory);
-      right.push(historyBtn);
-    }
-    const signOutBtn = el('button',{class:'btn-ghost btn btn-sm'},['Sign out']);
-    signOutBtn.addEventListener('click', function(){
-      if(state.screen === 'exam' || state.screen === 'review'){
-        const ok = window.confirm('You’re in the middle of a timed exam. Signing out now will discard this attempt. Sign out anyway?');
-        if(!ok) return;
-      }
-      signOut();
-    });
-    right.push(signOutBtn);
+  const themeLabel = saved==='light' ? 'Dark mode' : 'Light mode';
+  if(!state.currentUser){
+    return el('div',{class:'topbar'},[
+      brandLogo(),
+      el('div',{class:'topbar-right'},[ el('button',{class:'theme-toggle', onclick:toggleTheme},[themeLabel]) ])
+    ]);
   }
-  right.push(el('button',{class:'theme-toggle', onclick:toggleTheme},[saved==='light' ? 'Dark mode' : 'Light mode']));
-  return el('div',{class:'topbar'},[
-    brandLogo(),
-    el('div',{class:'topbar-right'}, right)
+  return el('div',{class:'topbar'},[ brandLogo(), el('div',{class:'topbar-right'},[ accountMenu(themeLabel) ]) ]);
+}
+
+// The account menu: the avatar opens a dropdown (click or tap; also hover on devices with a mouse)
+// with Admin, Cart, My results, the theme switch and Sign out.
+function accountMenu(themeLabel){
+  const u = state.currentUser;
+  const initial = (u.name || '?').trim().charAt(0).toUpperCase();
+  const inExam = state.screen === 'exam' || state.screen === 'review';
+  const n = state.cart.length;
+
+  const wrap = el('div',{class:'account'});
+  const trigger = el('button',{class:'user-chip', type:'button', 'aria-haspopup':'menu', 'aria-expanded':'false', 'aria-label':'Account menu for ' + u.name},[
+    el('span',{class:'avatar'},[initial, n && !inExam ? el('span',{class:'avatar-badge', 'aria-hidden':'true'},[String(n)]) : null]),
+    el('span',{class:'user-name'},[u.name]),
+    el('span',{class:'user-caret', 'aria-hidden':'true'},['▾'])
   ]);
+  const menu = el('div',{class:'account-menu', role:'menu'});
+  function item(label, onPick, cls, extra){
+    const b = el('button',{class:'account-item' + (cls ? ' ' + cls : ''), type:'button', role:'menuitem'},[label, extra || null]);
+    b.addEventListener('click', ()=>{ setOpen(false); onPick(); });
+    menu.appendChild(b);
+    return b;
+  }
+  menu.appendChild(el('div',{class:'account-head'},[ el('b',{},[u.name]), u.email ? el('span',{},[u.email]) : null ]));
+  if(!inExam){
+    if(u.isAdmin){
+      const a = el('a',{class:'account-item', href:'/admin', role:'menuitem'},['Admin']);
+      menu.appendChild(a);
+    }
+    item(el('span',{class:'cart-label'},['Cart']), openCart, 'cart-btn' + (state.screen === 'cart' ? ' on' : ''),
+      n ? el('span',{class:'cart-count'},[String(n)]) : null).setAttribute('aria-label', 'Cart, ' + plural(n, 'certificate'));
+    item('My results', loadHistory);
+  }
+  item(themeLabel, toggleTheme);
+  menu.appendChild(el('div',{class:'account-sep', role:'separator'}));
+  item('Sign out', function(){
+    if(inExam){
+      const ok = window.confirm('You’re in the middle of a timed exam. Signing out now will discard this attempt. Sign out anyway?');
+      if(!ok) return;
+    }
+    signOut();
+  }, 'danger');
+
+  function onDoc(e){ if(!wrap.contains(e.target)) setOpen(false); }
+  function onKey(e){ if(e.key === 'Escape'){ setOpen(false); trigger.focus(); } }
+  function setOpen(open){
+    wrap.classList.toggle('open', open);
+    // Closing on purpose (Escape, a pick, the avatar again) wins over hover until the mouse leaves.
+    if(!open && wrap.matches(':hover')) wrap.classList.add('no-hover');
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.removeEventListener('click', onDoc, true);
+    document.removeEventListener('keydown', onKey);
+    if(open){ document.addEventListener('click', onDoc, true); document.addEventListener('keydown', onKey); }
+  }
+  trigger.addEventListener('click', ()=> setOpen(!wrap.classList.contains('open')));
+  wrap.addEventListener('mouseleave', ()=> wrap.classList.remove('no-hover'));
+  wrap.appendChild(trigger);
+  wrap.appendChild(menu);
+  return wrap;
 }
 function toggleTheme(){
   const cur = document.documentElement.getAttribute('data-theme');
