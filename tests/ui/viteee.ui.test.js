@@ -2,6 +2,7 @@
 // time runs out, shows question images, and reports a score per section.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const { chromium } = require('playwright-core');
 const { startServer, validUser } = require('../helpers');
@@ -75,6 +76,10 @@ test('viteee: sections one at a time, timer moves on, image shown, per-section r
   assert.match(scores, /Mathematics.*\/ 40 correct/);
   assert.match(scores, /Physics0 \/ 25 correct/);
   assert.equal(await page.locator('.review-section-head').count(), 4);
-  assert.equal(await page.locator('.review-item img.q-image').count(), 1);
+  // The built-in bank has 7 diagram questions per set; the Physics one above may be one of them.
+  const withImage = new DatabaseSync(srv.dbPath).prepare(`SELECT COUNT(*) AS n FROM questions q JOIN exams e ON e.id = q.exam_id
+    WHERE e.slug = 'viteee' AND q.set_number = 1 AND q.image_data IS NOT NULL`).get().n;
+  assert.ok(withImage === 7 || withImage === 8, String(withImage));
+  assert.equal(await page.locator('.review-item img.q-image').count(), withImage);
   await ctx.close();
 });

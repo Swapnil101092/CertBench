@@ -85,6 +85,13 @@
     ["If f(x) = 2x + 3, what is f⁻¹(x)?", "(x − 3)/2", "(x + 3)/2", "2x − 3", "1/(2x + 3)", 0],
     ["What is the domain of f(x) = √(4 − x²)?", "[−2, 2]", "(−2, 2)", "[0, 2]", "All real numbers", 0]
   ],
+  "Mathematics figures": [
+    ["The graph shows a parabola y = f(x) passing through the marked points. Which equation describes it?", "y = x² − 4x + 3", "y = x² + 4x + 3", "y = −x² + 4x − 3", "y = x² − 2x − 3", 0, "viteee-math-parabola.png"],
+    ["The Venn diagram shows how many elements lie in each region of sets A and B and the universal set U. How many elements are in A ∪ B?", "25", "30", "20", "17", 0, "viteee-math-venn.png"],
+    ["From the point P on level ground, 30 m from the foot of a vertical tower, the angle of elevation of the top of the tower is 60° (see figure). What is the height h of the tower?", "30√3 m", "10√3 m", "15 m", "60 m", 0, "viteee-math-tower.png"],
+    ["What is the equation of the line L shown in the graph?", "x + 2y = 4", "2x + y = 4", "x − 2y = 4", "2x + y = 2", 0, "viteee-math-line.png"],
+    ["The spinner shown is divided into 8 equal sectors, 3 of which are shaded. If it is spun once, what is the probability that the arrow stops on a shaded sector?", "3/8", "5/8", "3/5", "1/3", 0, "viteee-math-spinner.png"]
+  ],
   "Physics": [
     ["What is the dimensional formula of Planck's constant?", "[ML²T⁻¹]", "[ML²T⁻²]", "[MLT⁻¹]", "[ML²T⁻³]", 0],
     ["What is the dimensional formula of the coefficient of viscosity?", "[ML⁻¹T⁻¹]", "[MLT⁻¹]", "[ML⁻¹T⁻²]", "[ML²T⁻¹]", 0],
@@ -143,6 +150,13 @@
     ["What is the output of a NOR gate when both its inputs are 0?", "1", "0", "It depends on the previous output", "Undefined", 0],
     ["The energy equivalent of 1 atomic mass unit (1 u) is approximately:", "931.5 MeV", "9.315 MeV", "1 MeV", "0.511 MeV", 0]
   ],
+  "Physics figures": [
+    ["In the circuit shown, the battery has negligible internal resistance. What current flows through the 2 Ω resistor?", "3 A", "1 A", "1.09 A", "6 A", 0, "viteee-phy-circuit.png"],
+    ["The velocity–time graph of a car is shown. What distance does the car cover in the first 10 s?", "160 m", "200 m", "120 m", "40 m", 0, "viteee-phy-vt.png"],
+    ["A 2 kg block slides down the smooth incline shown (g = 10 m/s²). What is its acceleration along the incline?", "5 m/s²", "10 m/s²", "5√3 m/s²", "2.5 m/s²", 0, "viteee-phy-incline.png"],
+    ["A ray of light passes from glass into air as shown in the figure. What is the refractive index of the glass?", "√3", "1/√3", "2", "√2", 0, "viteee-phy-refraction.png"],
+    ["For the logic circuit shown, what is the output Y when A = 1 and B = 0?", "1", "0", "It depends on the previous output", "The output is undefined", 0, "viteee-phy-gates.png"]
+  ],
   "Chemistry": [
     ["How many moles are present in 22 g of CO₂?", "0.5", "1", "2", "0.25", 0],
     ["The Avogadro constant is approximately:", "6.022 × 10²³ mol⁻¹", "6.022 × 10²² mol⁻¹", "3.011 × 10²³ mol⁻¹", "1.6 × 10⁻¹⁹ mol⁻¹", 0],
@@ -200,6 +214,12 @@
     ["What is the hybridisation of each carbon atom in benzene?", "sp²", "sp", "sp³", "sp³d", 0],
     ["By Hückel's rule, a planar, cyclic, fully conjugated system is aromatic if it has how many π electrons?", "4n + 2", "4n", "2n + 1", "4n + 1", 0]
   ],
+  "Chemistry figures": [
+    ["What is the IUPAC name of the aromatic compound shown?", "4-Nitrophenol", "2-Nitrophenol", "3-Nitrophenol", "Nitrobenzene", 0, "viteee-chem-nitrophenol.png"],
+    ["Give the IUPAC name of the alcohol whose structure is shown.", "2-Methylbutan-1-ol", "3-Methylbutan-1-ol", "2-Methylbutan-4-ol", "Pentan-1-ol", 0, "viteee-chem-alcohol.png"],
+    ["From the energy profile shown, what is the activation energy of the forward reaction?", "100 kJ mol⁻¹", "150 kJ mol⁻¹", "130 kJ mol⁻¹", "30 kJ mol⁻¹", 0, "viteee-chem-energy.png"],
+    ["For a reaction, a plot of ln[A] against time t is a straight line with a negative slope, as shown. What is the order of the reaction?", "First order", "Zero order", "Second order", "Third order", 0, "viteee-chem-lnA.png"]
+  ],
   "Aptitude": [
     ["What is the next number in the series 2, 6, 12, 20, 30, …?", "42", "40", "36", "44", 0],
     ["In a code language CAT is written as DBU. How is DOG written in that code?", "EPH", "EOH", "DPH", "FQI", 0],
@@ -215,6 +235,11 @@
     ["Pointing to a man, Riya said, \"He is the son of my mother's only brother.\" How is the man related to Riya?", "Cousin", "Brother", "Uncle", "Nephew", 0],
     ["What comes next in the series A, C, F, J, O, …?", "U", "T", "V", "S", 0],
     ["If today is Monday, what day of the week will it be 61 days from today?", "Saturday", "Sunday", "Friday", "Tuesday", 0]
+  ],
+  "Aptitude figures": [
+    ["How many triangles are there in the figure shown?", "6", "5", "4", "3", 0, "viteee-apt-triangles.png"],
+    ["The bar chart shows a dealer's car sales. By what percentage did sales rise from 2023 to 2024?", "80%", "50%", "20%", "44%", 0, "viteee-apt-bars.png"],
+    ["The numbers in each row of the grid follow the same rule. Which number replaces the question mark?", "13", "12", "14", "11", 0, "viteee-apt-grid.png"]
   ],
   "English": [
     ["Choose the word closest in meaning to ABUNDANT.", "Plentiful", "Scarce", "Expensive", "Hidden", 0],

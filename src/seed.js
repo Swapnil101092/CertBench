@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
 
 const BANKS = [
@@ -732,8 +734,8 @@ function seed({ only } = {}){
   const getExamId = db.prepare('SELECT id FROM exams WHERE slug = ?');
   const deleteQuestions = db.prepare('DELETE FROM questions WHERE exam_id = ?');
   const insertQuestion = db.prepare(`
-    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getExisting = db.prepare('SELECT id, source FROM exams WHERE slug = ?');
@@ -778,10 +780,12 @@ function seed({ only } = {}){
         assignSets(g.pool.length, g.perSet)
           .sort((x, y) => x.setNumber - y.setNumber)
           .forEach(({ poolIndex, setNumber }) => {
-            const [text, a, b, c, d, correct] = g.pool[poolIndex];
+            const [text, a, b, c, d, correct, imageFile] = g.pool[poolIndex];
             const [[oa,ob,oc,od], newCorrect] = shuffleOptions([a,b,c,d], correct);
+            const image = imageFile ? fs.readFileSync(path.join(bank.imageDir, imageFile)) : null;
             seqCounters[setNumber] = (seqCounters[setNumber] || 0) + 1;
-            insertQuestion.run(examId, setNumber, seqCounters[setNumber], text, oa, ob, oc, od, newCorrect, g.section);
+            insertQuestion.run(examId, setNumber, seqCounters[setNumber], text, oa, ob, oc, od, newCorrect, g.section,
+              image ? 'image/png' : null, image);
           });
       }
 
