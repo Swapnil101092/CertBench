@@ -6,6 +6,7 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { startServer } = require('./helpers');
 const { META } = require('../src/banks');
+const { META: SECTIONED } = require('../src/banks/sectioned');
 
 const BANK_DIR = path.join(__dirname, '..', 'src', 'banks');
 const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -59,25 +60,26 @@ test('banks: a fresh database gets every exam as 5 sets of 30 with no repeats', 
 });
 
 test('banks: an existing database gets new exams once, and deleted exams stay deleted', async () => {
+  const ALL = META.concat(SECTIONED);
   const srv = await startServer();
   try{
     const count = () => { const d = new DatabaseSync(srv.dbPath); try{ return d.prepare('SELECT slug FROM exams').all().map(r => r.slug); } finally { d.close(); } };
     // Make it look like a database from before src/banks existed, whose admin later deleted GCP.
     srv.sql("DELETE FROM settings WHERE name = 'builtin_exams_offered'");
-    for(const m of META) srv.sql('DELETE FROM exams WHERE slug = ?', m.slug);
+    for(const m of ALL) srv.sql('DELETE FROM exams WHERE slug = ?', m.slug);
     srv.sql("DELETE FROM exams WHERE slug = 'gcp'");
     assert.equal(count().length, 5);
 
     await srv.restart();
     let slugs = count();
-    for(const m of META) assert.ok(slugs.includes(m.slug), `${m.slug} added on the next start`);
+    for(const m of ALL) assert.ok(slugs.includes(m.slug), `${m.slug} added on the next start`);
     assert.ok(!slugs.includes('gcp'), 'an exam the admin deleted is not brought back');
 
     // Deleting one of the new exams afterwards also sticks.
-    srv.sql('DELETE FROM exams WHERE slug = ?', META[0].slug);
+    srv.sql('DELETE FROM exams WHERE slug = ?', ALL[0].slug);
     await srv.restart();
     slugs = count();
-    assert.ok(!slugs.includes(META[0].slug));
-    assert.equal(slugs.length, 5 + META.length - 1);
+    assert.ok(!slugs.includes(ALL[0].slug));
+    assert.equal(slugs.length, 5 + ALL.length - 1);
   } finally { srv.stop(); }
 });

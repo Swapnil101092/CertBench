@@ -121,6 +121,13 @@ try{ raw.exec('ALTER TABLE questions ADD COLUMN active INTEGER NOT NULL DEFAULT 
 // no server-side session, so the admin panel's "active now" count is based on this.
 try{ raw.exec('ALTER TABLE users ADD COLUMN last_seen_at TEXT'); }catch(e){}
 try{ raw.exec('CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at)'); }catch(e){}
+// exams.sections: JSON list of { name, questions, minutes } for exams split into timed sections
+// (e.g. VITEEE). NULL = one timer for the whole set. questions.section names the section a question
+// belongs to; questions.image_* hold an optional picture shown with the question.
+try{ raw.exec('ALTER TABLE exams ADD COLUMN sections TEXT'); }catch(e){}
+try{ raw.exec('ALTER TABLE questions ADD COLUMN section TEXT'); }catch(e){}
+try{ raw.exec('ALTER TABLE questions ADD COLUMN image_mime TEXT'); }catch(e){}
+try{ raw.exec('ALTER TABLE questions ADD COLUMN image_data BLOB'); }catch(e){}
 
 raw.exec(`
 -- Which questions an attempt was actually served, so grading stays correct even if an

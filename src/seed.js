@@ -674,6 +674,7 @@ const BANKS = [
 // src/banks/ (metadata in index.js, 150 questions per exam in <slug>.json).
 const ORIGINAL_SLUGS = BANKS.map(b => b.slug);
 BANKS.push(...require('./banks').BANKS);
+BANKS.push(...require('./banks/sectioned').BANKS);
 
 function shuffleOptions(options, correctIndex){
   const idx = [0,1,2,3];
@@ -702,13 +703,13 @@ const QUESTIONS_PER_SET = 30;
 // each, balancing how often each question is reused so no single question
 // is over- or under-represented across the 5 sets. Returns an array of
 // { poolIndex, setNumber } assignments.
-function assignSets(poolSize){
+function assignSets(poolSize, perSet = QUESTIONS_PER_SET){
   const usage = new Array(poolSize).fill(0);
   const assignments = [];
   for(let setNum = 1; setNum <= SET_COUNT; setNum++){
     const order = shuffleArray([...Array(poolSize).keys()])
       .sort((a, b) => usage[a] - usage[b]); // stable sort keeps the shuffle as the tie-break
-    const chosen = order.slice(0, Math.min(QUESTIONS_PER_SET, poolSize));
+    const chosen = order.slice(0, Math.min(perSet, poolSize));
     chosen.forEach(poolIndex => {
       usage[poolIndex]++;
       assignments.push({ poolIndex, setNumber: setNum });
@@ -720,18 +721,19 @@ function assignSets(poolSize){
 // `only` (optional): a list of slugs to seed, leaving every other built-in exam alone.
 function seed({ only } = {}){
   const insertExam = db.prepare(`
-    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise)
-    VALUES (@slug, @name, @description, @duration_minutes, @pass_pct, @color, @short_label, @price_inr_paise)
+    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections)
+    VALUES (@slug, @name, @description, @duration_minutes, @pass_pct, @color, @short_label, @price_inr_paise, @sections)
     ON CONFLICT(slug) DO UPDATE SET
       name=excluded.name, description=excluded.description,
       duration_minutes=excluded.duration_minutes, pass_pct=excluded.pass_pct,
-      color=excluded.color, short_label=excluded.short_label, price_inr_paise=excluded.price_inr_paise
+      color=excluded.color, short_label=excluded.short_label, price_inr_paise=excluded.price_inr_paise,
+      sections=excluded.sections
   `);
   const getExamId = db.prepare('SELECT id FROM exams WHERE slug = ?');
   const deleteQuestions = db.prepare('DELETE FROM questions WHERE exam_id = ?');
   const insertQuestion = db.prepare(`
-    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getExisting = db.prepare('SELECT id, source FROM exams WHERE slug = ?');
@@ -757,23 +759,34 @@ function seed({ only } = {}){
         slug: bank.slug, name: bank.name, description: bank.description,
         duration_minutes: bank.duration_minutes, pass_pct: bank.pass_pct,
         color: bank.color, short_label: bank.short_label,
-        price_inr_paise: Math.round((bank.price_inr || 0) * 100)
+        price_inr_paise: Math.round((bank.price_inr || 0) * 100),
+        sections: bank.sections ? JSON.stringify(bank.sections) : null
       });
       const examId = getExamId.get(bank.slug).id;
       deleteQuestions.run(examId);
 
-      const assignments = assignSets(bank.questions.length);
-      const seqCounters = {}; // per set_number, running seq 1..30
+      // A sectioned exam fills each set section by section (in section order), from that section's own pool.
+      const groups = bank.sections
+        ? (bank.seedSections || bank.sections).flatMap(s => (s.parts || [{ pool: s.name, questions: s.questions }])
+            .map(part => ({ section: s.name, pool: bank.sectionPools[part.pool], perSet: part.questions })))
+        : [{ section: null, pool: bank.questions, perSet: QUESTIONS_PER_SET }];
+      const seqCounters = {}; // per set_number, running seq 1..n
+      let unique = 0;
 
-      assignments.forEach(({ poolIndex, setNumber }) => {
-        const q = bank.questions[poolIndex];
-        const [text, a, b, c, d, correct] = q;
-        const [[oa,ob,oc,od], newCorrect] = shuffleOptions([a,b,c,d], correct);
-        seqCounters[setNumber] = (seqCounters[setNumber] || 0) + 1;
-        insertQuestion.run(examId, setNumber, seqCounters[setNumber], text, oa, ob, oc, od, newCorrect);
-      });
+      for(const g of groups){
+        unique += g.pool.length;
+        assignSets(g.pool.length, g.perSet)
+          .sort((x, y) => x.setNumber - y.setNumber)
+          .forEach(({ poolIndex, setNumber }) => {
+            const [text, a, b, c, d, correct] = g.pool[poolIndex];
+            const [[oa,ob,oc,od], newCorrect] = shuffleOptions([a,b,c,d], correct);
+            seqCounters[setNumber] = (seqCounters[setNumber] || 0) + 1;
+            insertQuestion.run(examId, setNumber, seqCounters[setNumber], text, oa, ob, oc, od, newCorrect, g.section);
+          });
+      }
 
-      console.log(`Seeded "${bank.name}" — ${bank.questions.length} unique questions across ${SET_COUNT} sets of ${QUESTIONS_PER_SET}`);
+      const perSet = groups.reduce((t, g) => t + Math.min(g.perSet, g.pool.length), 0);
+      console.log(`Seeded "${bank.name}" — ${unique} unique questions across ${SET_COUNT} sets of ${perSet}`);
     }
   });
   run();

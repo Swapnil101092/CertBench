@@ -14,6 +14,7 @@ let state = {
   setsExamSlug: null, setsExamMeta: null, availableSets: [],
   examMeta: null, examSetNumber: null, attemptId: null, questions: [], current: 0, answers: {},
   visitedIds: {}, skippedIds: {},
+  sections: null, sectionIdx: 0, sectionNotice: '',   // timed sections (e.g. VITEEE); null = one timer for the set
   secondsLeft: 0, timerHandle: null, otpTickHandle: null,
   results: null,
   myAttempts: [],
@@ -394,6 +395,8 @@ function landingFacts(){
   const f = { n: list.length, names: list.map(x => x.short), setCount: 5, perSet: 30, samePerSet: true, passPct: 70, samePass: true };
   f.jee = list.filter(isJee).length;
   f.it = f.n - f.jee;
+  f.entrance = entranceLabel(list);
+  f.entranceFree = list.filter(isJee).every(x => x.price === 0);
   f.catLabels = categoriesIn(list, x => x.label).map(c => c.label);
   if(src){
     f.setCount = Math.max.apply(null, src.map(x => x.set_count || 0)) || 5;
@@ -416,16 +419,17 @@ function heroSubText(){
   const f = landingFacts();
   const tail = 'results graded the moment you finish — so you know exactly where you stand before the exam that actually counts.';
   if(!f.n) return 'Timed mock exams with ' + tail;
-  const what = f.jee && f.it ? plural(f.it, 'IT certification') + ' plus free JEE Main practice'
-             : f.jee ? 'JEE Main practice' : plural(f.it, 'IT certification');
+  const what = f.jee && f.it ? plural(f.it, 'IT certification') + ' plus ' + (f.entranceFree ? 'free ' : '') + f.entrance + ' practice'
+             : f.jee ? f.entrance + ' practice' : plural(f.it, 'IT certification');
   return 'Timed mock exams for ' + what + ', ' + f.setCount + ' fresh practice sets each, and ' + tail;
 }
 function howStepTexts(){
   const f = landingFacts();
-  const itCats = f.catLabels.filter(c => c !== 'JEE Main');
+  const entranceLabels = EXAM_CATEGORIES.filter(c => ENTRANCE_CATEGORIES.includes(c.id)).map(c => c.label);
+  const itCats = f.catLabels.filter(c => !entranceLabels.includes(c));
   const one = !f.n ? 'Choose the certification you are preparing for.'
     : (f.it ? 'Choose from ' + plural(f.it, 'IT certification') + ' across ' + joinNames(itCats) : 'Choose your subject')
-      + (f.jee && f.it ? ', or practise for JEE Main for free.' : '.');
+      + (f.jee && f.it ? ', or practise for ' + f.entrance + (f.entranceFree ? ' for free.' : '.') : '.');
   const qTxt = f.samePerSet && f.perSet ? ' of ' + f.perSet + ' questions' : '';
   const passTxt = f.samePass ? ' with ' + f.passPct + '% or more' : ' (the pass mark is shown on each exam)';
   const two = 'Every exam has ' + f.setCount + ' practice sets' + qTxt + ' with a countdown timer. Pass a set' + passTxt + ' to unlock the next one.';
@@ -508,10 +512,12 @@ const EXAM_CATEGORIES = [
   { id:'data',       label:'Data & Analytics',    labels:['DEA','PDE','DBX','SNOW','P300'] },
   { id:'management', label:'IT Management',       labels:['ITIL','PMP','TOGF','CSA','SFDC'] },
   { id:'jee',        label:'JEE Main',            labels:['PHY','CHEM','MATH'] },
+  { id:'viteee',     label:'VITEEE',              labels:['VIT'] },
   { id:'other',      label:'More',                labels:[] }
 ];
 const CATEGORY_KEYWORDS = [
   ['jee', /\bjee\b|\bneet\b/i],
+  ['viteee', /\bviteee\b/i],
   ['security', /security|cissp|\bceh\b|cyber/i],
   ['management', /\bitil\b|\bpmp\b|project management|scrum|prince2/i],
   ['testing', /testing|\bqa\b|istqb|selenium|tosca/i],
@@ -528,7 +534,13 @@ function examCategoryId(label, name){
   return hit ? hit[0] : 'other';
 }
 function categoryLabel(id){ const c = EXAM_CATEGORIES.find(x => x.id === id); return c ? c.label : 'More'; }
-function isJee(x){ return examCategoryId(x.label || x.short_label, x.name) === 'jee'; }
+// Engineering entrance exams (JEE Main, VITEEE) are for a different audience from the IT certifications,
+// so the home page shows them in their own section.
+const ENTRANCE_CATEGORIES = ['jee', 'viteee'];
+function isJee(x){ return ENTRANCE_CATEGORIES.includes(examCategoryId(x.label || x.short_label, x.name)); }
+function entranceLabel(list){
+  return joinNames(EXAM_CATEGORIES.filter(c => ENTRANCE_CATEGORIES.includes(c.id) && list.some(x => isJee(x) && examCategoryId(x.label || x.short_label, x.name) === c.id)).map(c => c.label)) || 'JEE Main';
+}
 // Categories that actually have exams, in display order, with counts.
 function categoriesIn(list, getLabel){
   return EXAM_CATEGORIES.map(c => ({ id:c.id, label:c.label,
@@ -845,15 +857,16 @@ function renderLanding(){
   drawLandingExams();
   wrap.appendChild(examsSec);
 
-  // ---- JEE Main: a different audience, so it gets its own short section ----
+  // ---- Engineering entrance (JEE Main, VITEEE): a different audience, so it gets its own short section ----
   if(jeeExams.length){
     const jeeFacts = commonExamFacts(jeeExams);
     const allFree = jeeExams.every(x => x.price === 0);
+    const entrance = entranceLabel(jeeExams);
     const jeeSec = el('section',{class:'landing-section', id:'jee'},[
       el('div',{class:'section-head'},[
-        el('span',{class:'eyebrow'},['JEE Main']),
-        el('h2',{class:'section-title'},[allFree ? 'Free JEE Main practice' : 'JEE Main practice']),
-        el('p',{class:'section-sub'},['Original JEE Main-style questions, subject by subject, weighted to the chapters asked most often. ' + jeeFacts.text])
+        el('span',{class:'eyebrow'},[entrance === 'JEE Main' ? 'JEE Main' : 'Engineering entrance']),
+        el('h2',{class:'section-title'},[(allFree ? 'Free ' : '') + entrance + ' practice']),
+        el('p',{class:'section-sub'},['Original ' + entrance + '-style questions, weighted to the chapters asked most often. ' + jeeFacts.text])
       ])
     ]);
     const jeeGrid = el('div',{class:'exam-grid'});
@@ -1758,7 +1771,7 @@ function renderSelect(){
         el('div',{class:'cert-meta'},[
           el('span',{},[el('b',{},[String(bank.question_count)]), 'questions per set']),
           el('span',{},[el('b',{},[String(bank.set_count||5)]), 'practice sets']),
-          el('span',{},[el('b',{},[bank.duration_minutes+' min']), 'time limit']),
+          el('span',{},[el('b',{},[bank.duration_minutes+' min']), bank.sections && bank.sections.length ? bank.sections.length + ' timed sections' : 'time limit']),
           el('span',{},[el('b',{},[bank.pass_pct+'%']), 'to pass'])
         ]),
         isEnrolled && isPaid ? el('div',{class:'enrolled-tag'},['✓ Enrolled']) : null,
@@ -2091,6 +2104,12 @@ function renderSets(){
     el('h1',{},[meta.name]),
     el('p',{},['Pick a practice set below. Each set has its own ' + (new Set(state.availableSets.map(x => x.questionCount)).size === 1 ? state.availableSets[0].questionCount + ' ' : '') + 'questions, so retaking the exam with a different set gives you fresh material to practice with.'])
   ]));
+  if(meta.sections && meta.sections.length){
+    wrap.appendChild(el('div',{class:'sections-info'},[
+      el('p',{},['Every set has ' + meta.sections.length + ' sections, taken in this order. Each section has its own timer: when it runs out you move on to the next section automatically, and you can’t go back to a finished section.']),
+      el('ol',{class:'sections-list'}, meta.sections.map(sec => el('li',{},[el('b',{},[sec.name]), ' · ' + sec.questions + ' questions · ' + sec.minutes + ' min'])))
+    ]));
+  }
 
   const grid = el('div',{class:'cert-grid'});
   state.availableSets.forEach(s=>{
@@ -2204,7 +2223,10 @@ async function startExam(slug, setNumber){
     state.answers = {};
     state.visitedIds = {};
     state.skippedIds = {};
-    state.secondsLeft = data.exam.durationMinutes * 60;
+    state.sections = buildSections(data.sections, data.questions);
+    state.sectionIdx = 0;
+    state.sectionNotice = '';
+    state.secondsLeft = state.sections ? state.sections[0].minutes * 60 : data.exam.durationMinutes * 60;
     state.screen = 'exam';
     render();
     startTimer();
@@ -2225,6 +2247,51 @@ async function startExam(slug, setNumber){
   }
 }
 
+// ---- Timed sections: each section has its own clock, and a finished section can't be reopened ----
+// Adds each section's question range: { name, minutes, start, end } (end exclusive).
+function buildSections(list, questions){
+  if(!list || !list.length) return null;
+  let start = 0;
+  return list.map(sec => {
+    const r = { name: sec.name, minutes: sec.minutes, start, end: start + sec.questionCount };
+    start = r.end;
+    return r;
+  }).filter(r => r.end <= questions.length);
+}
+function currentSection(){ return state.sections ? state.sections[state.sectionIdx] : null; }
+// The questions the student can move between right now (the current section, or the whole set).
+function visibleRange(){
+  const sec = currentSection();
+  return sec ? { start: sec.start, end: sec.end } : { start: 0, end: state.questions.length };
+}
+function isLastSection(){ return !state.sections || state.sectionIdx === state.sections.length - 1; }
+// Moves on to the next section (when its time runs out, or the student finishes it early).
+function nextSection(timedOut){
+  const done = currentSection();
+  state.sectionIdx++;
+  const sec = currentSection();
+  state.current = sec.start;
+  state.secondsLeft = sec.minutes * 60;
+  state.sectionNotice = timedOut ? 'Time is up for ' + done.name + '. ' + sec.name + ' has started.' : '';
+  state.sectionNoticeAt = state.current;   // shown until the student moves to another question
+  state.screen = 'exam';
+  render();
+  startTimer();
+}
+function sectionStrip(){
+  if(!state.sections) return null;
+  return el('div',{class:'section-strip', role:'list', 'aria-label':'Exam sections'}, state.sections.map((sec, i) => {
+    const st = i < state.sectionIdx ? 'done' : i === state.sectionIdx ? 'current' : 'upcoming';
+    return el('div',{class:'section-step ' + st, role:'listitem', 'aria-current': st === 'current' ? 'step' : undefined},[
+      el('b',{},[sec.name]),
+      el('span',{},[(sec.end - sec.start) + ' Qs · ' + sec.minutes + ' min' + (st === 'done' ? ' · done' : '')])
+    ]);
+  }));
+}
+function questionImage(src){
+  return src ? el('img',{class:'q-image', src, alt:'Question figure', loading:'lazy'}) : null;
+}
+
 function startTimer(){
   clearInterval(state.timerHandle);
   state.timerHandle = setInterval(()=>{
@@ -2232,7 +2299,8 @@ function startTimer(){
     if(state.secondsLeft <= 0){
       state.secondsLeft = 0;
       clearInterval(state.timerHandle);
-      submitExam();
+      if(!isLastSection()) nextSection(true);
+      else submitExam();
       return;
     }
     const timerEl = document.querySelector('.timer');
@@ -2256,27 +2324,42 @@ function goToQuestion(index){
   render();
 }
 
+function timerNode(){
+  const sec = currentSection();
+  return el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`, title: sec ? 'Time left for ' + sec.name : 'Time left'},[
+    el('span',{class:'dot'}), sec ? el('span',{class:'timer-section'},[sec.name]) : null, el('span',{class:'time-label'},[fmtTime(state.secondsLeft)])
+  ]);
+}
+
 function renderExam(){
   const bank = state.examMeta;
+  const range = visibleRange();
+  if(state.current < range.start || state.current >= range.end) state.current = range.start;
   const q = state.questions[state.current];
+  const sec = currentSection();
+  const shown = state.questions.slice(range.start, range.end);
   state.visitedIds[q.id] = true; // mark visited as soon as it's shown
 
   const wrap = el('div',{class:'exam-wrap'});
 
   wrap.appendChild(el('div',{class:'exam-bar'},[
     el('div',{class:'exam-title'},[el('span',{class:'exam-title-badge', style:`--c:${safeColor(bank.color)}`},[bank.shortLabel || bank.short_label || 'Exam']), el('span',{},['Now taking ', el('b',{},[bank.name]), state.examSetNumber ? ` — Set ${state.examSetNumber}` : ''])]),
-    el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`},[ el('span',{class:'dot'}), el('span',{class:'time-label'},[fmtTime(state.secondsLeft)]) ])
+    timerNode()
   ]));
+  if(sec) wrap.appendChild(sectionStrip());
+  if(state.sectionNotice && state.sectionNoticeAt === state.current){
+    wrap.appendChild(el('div',{class:'section-notice', role:'status'},[state.sectionNotice]));
+  }
 
-  const answeredCount = state.questions.filter(qq => state.answers[qq.id] !== undefined).length;
-  wrap.appendChild(el('div',{class:'exam-progress', title: answeredCount + ' of ' + state.questions.length + ' answered'},[
-    el('span',{style:`width:${(answeredCount/state.questions.length*100).toFixed(1)}%`})
+  const answeredCount = shown.filter(qq => state.answers[qq.id] !== undefined).length;
+  wrap.appendChild(el('div',{class:'exam-progress', title: answeredCount + ' of ' + shown.length + ' answered'},[
+    el('span',{style:`width:${(answeredCount/shown.length*100).toFixed(1)}%`})
   ]));
   const layout = el('div',{class:'exam-layout'});
 
   // ---- left sidebar: question palette ----
   const sidebar = el('div',{class:'question-sidebar'});
-  sidebar.appendChild(el('div',{class:'sidebar-heading'},['Questions']));
+  sidebar.appendChild(el('div',{class:'sidebar-heading'},[sec ? sec.name + ' questions' : 'Questions']));
 
   const legend = el('div',{class:'palette-legend'},[
     el('span',{},[el('i',{class:'dot-answered'}), 'Answered']),
@@ -2287,15 +2370,16 @@ function renderExam(){
   sidebar.appendChild(legend);
 
   const paletteGrid = el('div',{class:'palette-grid'});
-  state.questions.forEach((qq,i)=>{
+  shown.forEach((qq,k)=>{
+    const i = range.start + k;
     const status = questionStatus(qq);
-    const btn = el('button',{class:`palette-item ${status}${i===state.current?' current':''}`, type:'button'},[String(i+1)]);
+    const btn = el('button',{class:`palette-item ${status}${i===state.current?' current':''}`, type:'button'},[String(k+1)]);
     btn.addEventListener('click', ()=>goToQuestion(i));
     paletteGrid.appendChild(btn);
   });
   sidebar.appendChild(paletteGrid);
 
-  const reviewBtn = el('button',{class:'btn btn-ghost', style:'width:100%;margin-top:1rem;'},['Review & submit']);
+  const reviewBtn = el('button',{class:'btn btn-ghost', style:'width:100%;margin-top:1rem;'},[sec && !isLastSection() ? 'Review & finish section' : 'Review & submit']);
   reviewBtn.addEventListener('click', goToReview);
   sidebar.appendChild(reviewBtn);
 
@@ -2308,8 +2392,9 @@ function renderExam(){
   // ---- main question panel ----
   const body = el('div',{class:'exam-body'});
   const panel = el('div',{class:'question-panel'});
-  panel.appendChild(el('div',{class:'q-index'},[`QUESTION ${state.current+1} OF ${state.questions.length}`]));
-  panel.appendChild(el('div',{class:'q-text'},[q.text]));
+  panel.appendChild(el('div',{class:'q-index'},[(sec ? sec.name.toUpperCase() + ' · ' : '') + `QUESTION ${state.current-range.start+1} OF ${shown.length}`]));
+  if(q.text) panel.appendChild(el('div',{class:'q-text'},[q.text]));
+  if(q.image) panel.appendChild(questionImage(q.image));
 
   const optionsWrap = el('div',{class:'options'});
   q.options.forEach((opt, idx)=>{
@@ -2329,10 +2414,10 @@ function renderExam(){
 
   const nav = el('div',{class:'exam-nav'});
   const prevBtn = el('button',{class:'btn btn-ghost'},['Previous']);
-  if(state.current === 0){ prevBtn.setAttribute('disabled','disabled'); prevBtn.style.opacity='.4'; }
-  prevBtn.addEventListener('click', ()=>{ if(state.current>0){ state.current--; render(); } });
+  if(state.current === range.start){ prevBtn.setAttribute('disabled','disabled'); prevBtn.style.opacity='.4'; }
+  prevBtn.addEventListener('click', ()=>{ if(state.current>range.start){ state.current--; render(); } });
 
-  const isLast = state.current === state.questions.length - 1;
+  const isLast = state.current === range.end - 1;
 
   const skipBtn = el('button',{class:'btn btn-ghost'},['Skip question']);
   skipBtn.addEventListener('click', ()=>{
@@ -2341,7 +2426,7 @@ function renderExam(){
     if(isLast) goToReview(); else { state.current++; render(); }
   });
 
-  const nextBtn = el('button',{class:'btn btn-primary'},[isLast ? 'Review answers' : 'Next question']);
+  const nextBtn = el('button',{class:'btn btn-primary'},[isLast ? (sec ? 'Review ' + sec.name : 'Review answers') : 'Next question']);
   nextBtn.addEventListener('click', ()=>{ if(isLast) goToReview(); else { state.current++; render(); } });
 
   nav.appendChild(prevBtn);
@@ -2374,27 +2459,38 @@ function exitExam(){
   state.answers = {};
   state.visitedIds = {};
   state.skippedIds = {};
+  state.sections = null;
+  state.sectionIdx = 0;
+  state.sectionNotice = '';
   if(slug) loadSets(slug);
   else { state.screen = 'select'; render(); }
 }
 
 function renderReview(){
   const bank = state.examMeta;
+  const sec = currentSection();
+  const range = visibleRange();
+  const shown = state.questions.slice(range.start, range.end);
+  const finishingSection = sec && !isLastSection();
   const wrap = el('div',{class:'exam-wrap'});
 
   wrap.appendChild(el('div',{class:'exam-bar'},[
     el('div',{class:'exam-title'},['Reviewing ', el('b',{},[bank.name]), state.examSetNumber ? ` — Set ${state.examSetNumber}` : '']),
-    el('div',{class:`timer${state.secondsLeft<=60?' warn':''}`},[ el('span',{class:'dot'}), el('span',{class:'time-label'},[fmtTime(state.secondsLeft)]) ])
+    timerNode()
   ]));
+  if(sec) wrap.appendChild(sectionStrip());
 
   const body = el('div',{class:'exam-body'});
   const panel = el('div',{class:'question-panel', style:'max-width:800px;'});
 
   const counts = { answered:0, skipped:0, 'not-answered':0, 'not-visited':0 };
-  state.questions.forEach(q => counts[questionStatus(q)]++);
+  shown.forEach(q => counts[questionStatus(q)]++);
 
-  panel.appendChild(el('div',{class:'q-index'},['BEFORE YOU SUBMIT']));
-  panel.appendChild(el('div',{class:'q-text', style:'font-size:1.15rem;'},['Review your answers']));
+  panel.appendChild(el('div',{class:'q-index'},[finishingSection ? 'BEFORE YOU MOVE ON' : 'BEFORE YOU SUBMIT']));
+  panel.appendChild(el('div',{class:'q-text', style:'font-size:1.15rem;'},[sec ? 'Review your ' + sec.name + ' answers' : 'Review your answers']));
+  if(finishingSection){
+    panel.appendChild(el('p',{class:'section-hint'},['Once you start ' + state.sections[state.sectionIdx + 1].name + ', you can’t come back to ' + sec.name + '. Time you don’t use here is not carried over.']));
+  }
 
   panel.appendChild(el('div',{class:'review-summary'},[
     el('div',{class:'review-stat answered'},[el('b',{},[String(counts.answered)]), el('span',{},['Answered'])]),
@@ -2411,21 +2507,26 @@ function renderReview(){
   }
 
   const paletteGrid = el('div',{class:'palette-grid', style:'margin:1.25rem 0 1.75rem;'});
-  state.questions.forEach((qq,i)=>{
+  shown.forEach((qq,k)=>{
     const status = questionStatus(qq);
-    const btn = el('button',{class:`palette-item ${status}`, type:'button'},[String(i+1)]);
-    btn.addEventListener('click', ()=>{ state.current = i; state.screen = 'exam'; render(); });
+    const btn = el('button',{class:`palette-item ${status}`, type:'button'},[String(k+1)]);
+    btn.addEventListener('click', ()=>{ state.current = range.start + k; state.screen = 'exam'; render(); });
     paletteGrid.appendChild(btn);
   });
   panel.appendChild(paletteGrid);
 
   const nav = el('div',{class:'exam-nav'});
-  const backBtn = el('button',{class:'btn btn-ghost'},['← Back to exam']);
+  const backBtn = el('button',{class:'btn btn-ghost'},[sec ? '← Back to ' + sec.name : '← Back to exam']);
   backBtn.addEventListener('click', ()=>{ state.screen='exam'; render(); });
   const exitBtn = el('button',{class:'btn btn-danger'},['Exit exam']);
   exitBtn.addEventListener('click', exitExam);
-  const submitBtn = el('button',{class:'btn btn-primary'},['Submit exam']);
+  const submitBtn = el('button',{class:'btn btn-primary'},[finishingSection ? 'Finish section & start ' + state.sections[state.sectionIdx + 1].name : 'Submit exam']);
   submitBtn.addEventListener('click', ()=>{
+    if(finishingSection){
+      const ok = window.confirm((missed > 0 ? `You still have ${missed} question${missed===1?'':'s'} without an answer in ${sec.name}. ` : '') + `Move on to ${state.sections[state.sectionIdx + 1].name}? You can’t come back to ${sec.name}.`);
+      if(ok) nextSection(false);
+      return;
+    }
     if(missed > 0){
       const ok = window.confirm(`You still have ${missed} question${missed===1?'':'s'} without an answer. Submit anyway?`);
       if(!ok) return;
@@ -2493,12 +2594,29 @@ function renderResults(){
     ])
   ]);
   wrap.appendChild(el('div',{class:'score-panel ' + (pass ? 'is-pass' : 'is-fail')},[ring, info]));
+  if(r.sections && r.sections.length){
+    wrap.appendChild(el('div',{class:'section-scores'}, r.sections.map(sc => {
+      const sp = sc.total ? Math.round(sc.correct / sc.total * 100) : 0;
+      return el('div',{class:'section-score'},[
+        el('b',{},[sc.name]),
+        el('span',{},[sc.correct + ' / ' + sc.total + ' correct']),
+        el('div',{class:'set-bar', title: sp + '%'},[ el('span',{style:`width:${sp}%`}) ])
+      ]);
+    })));
+  }
   wrap.appendChild(renderMyReview());
 
   wrap.appendChild(el('div',{class:'review-head'},[ el('h3',{},['Answer breakdown']) ]));
-  r.detail.forEach((d,i)=>{
+  let lastSection = null, n = 0;
+  r.detail.forEach((d)=>{
+    if(d.section && d.section !== lastSection){
+      lastSection = d.section; n = 0;
+      wrap.appendChild(el('h4',{class:'review-section-head'},[d.section]));
+    }
+    n++;
     const item = el('div',{class:'review-item '+(d.isCorrect?'correct':'incorrect')});
-    item.appendChild(el('p',{class:'review-q'},[`${i+1}. ${d.text}`]));
+    item.appendChild(el('p',{class:'review-q'},[`${n}. ${d.text || ''}`]));
+    if(d.image) item.appendChild(questionImage(d.image));
     const yourText = (d.selectedIndex===null||d.selectedIndex===undefined) ? 'No answer selected' : d.options[d.selectedIndex];
     item.appendChild(el('div',{class:'review-row your '+(d.isCorrect?'right':'wrong')},[
       el('span',{class:'lbl'},['Your answer']), el('span',{},[yourText, d.isCorrect ? '  ✓' : '  ✗'])
@@ -2533,7 +2651,7 @@ function signOut(){
     screen:'login', token:null, currentUser:null,
     setsExamSlug:null, setsExamMeta:null, availableSets:[],
     attemptId:null, examMeta:null, examSetNumber:null, questions:[], current:0, answers:{},
-    visitedIds:{}, skippedIds:{},
+    visitedIds:{}, skippedIds:{}, sections:null, sectionIdx:0, sectionNotice:'',
     results:null, myAttempts:[], examSearch:'', examCat:'all', myReview:undefined, canReview:false,
     resetToken:null, resetEmail:'', resetError:'', resetOtp:null, forgotError:'', forgotNotice:'',
     loginError:'', loginNotice:'', registerError:'', regDraft:null, regVerify:null,
