@@ -5,7 +5,6 @@ const photos = require('./photos');
 
 const DEFAULT_ABOUT = [
   'CertBench is a practice platform for people preparing for IT certification exams. Every question is an original practice question written for CertBench, not a copy of real exam content, so you are practicing the concepts rather than memorizing real exam questions.',
-  'Answers are graded on the server and your results are saved to your account. Correct answers are only revealed after you submit, just like a real exam.',
   'CertBench is an independent project and is not affiliated with or endorsed by Microsoft, AWS, Google, or the Cloud Native Computing Foundation.'
 ].join('\n\n');
 
