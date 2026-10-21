@@ -86,4 +86,4 @@ function remove(id){
   return r.changes ? {} : { notFound: true };
 }
 
-module.exports = { list, get, add, setCaption, move, remove, MAX_PHOTOS };
+module.exports = { list, get, add, setCaption, move, remove, MAX_PHOTOS, sniff };

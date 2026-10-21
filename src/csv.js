@@ -31,8 +31,10 @@ const ALIASES = {
   b: ['option_b', 'option b', 'optionb', 'b', 'option2', 'option 2', 'answer b'],
   c: ['option_c', 'option c', 'optionc', 'c', 'option3', 'option 3', 'answer c'],
   d: ['option_d', 'option d', 'optiond', 'd', 'option4', 'option 4', 'answer d'],
-  correct: ['correct', 'answer', 'correct_answer', 'correct answer', 'key', 'correct option']
+  correct: ['correct', 'answer', 'correct_answer', 'correct answer', 'key', 'correct option'],
+  section: ['section', 'subject']   // optional: only for certificates split into sections
 };
+const OPTIONAL = ['section'];
 
 // Turns raw rows into { line, text, options, correctIndex } (or { line, error }).
 // `line` is the row number as seen in a spreadsheet (header = row 1).
@@ -46,18 +48,18 @@ function toQuestionRows(rows){
     for(const key of Object.keys(ALIASES)){
       idx[key] = first.findIndex(x => ALIASES[key].includes(x));
     }
-    const missing = Object.keys(idx).filter(k => idx[k] === -1).map(k => ({ question:'question', a:'option_a', b:'option_b', c:'option_c', d:'option_d', correct:'correct' }[k]));
+    const missing = Object.keys(idx).filter(k => idx[k] === -1 && !OPTIONAL.includes(k)).map(k => ({ question:'question', a:'option_a', b:'option_b', c:'option_c', d:'option_d', correct:'correct' }[k]));
     if(missing.length) return { items: [], headerError: 'Missing column(s): ' + missing.join(', ') + '. Use the template columns: question, option_a, option_b, option_c, option_d, correct.' };
     start = 1;
   } else {
-    idx = { question: 0, a: 1, b: 2, c: 3, d: 4, correct: 5 };
+    idx = { question: 0, a: 1, b: 2, c: 3, d: 4, correct: 5, section: 6 };
     start = 0;
   }
   const items = [];
   for(let r = start; r < rows.length; r++){
     const cells = rows[r].map(x => String(x).trim());
     const line = r + 1;
-    const get = (k) => cells[idx[k]] !== undefined ? cells[idx[k]] : '';
+    const get = (k) => idx[k] !== -1 && cells[idx[k]] !== undefined ? cells[idx[k]] : '';
     const token = get('correct');
     let correctIndex = -1;
     if(/^[A-Da-d]$/.test(token)) correctIndex = token.toUpperCase().charCodeAt(0) - 65;
@@ -66,7 +68,7 @@ function toQuestionRows(rows){
       items.push({ line, error: 'The "correct" column must be A, B, C or D (or 1-4). Found: "' + token + '".' });
       continue;
     }
-    items.push({ line, text: get('question'), options: [get('a'), get('b'), get('c'), get('d')], correctIndex });
+    items.push({ line, text: get('question'), options: [get('a'), get('b'), get('c'), get('d')], correctIndex, section: get('section') });
   }
   return { items };
 }

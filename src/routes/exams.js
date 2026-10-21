@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, optionalAuth } = require('../auth');
+const Sections = require('../sections');
 
 const router = express.Router();
 const SET_COUNT = 5;
@@ -19,7 +20,7 @@ function hasPaidEnrollment(userId, examId){
 router.get('/', optionalAuth, (req, res) => {
   const exams = db.prepare(`
     SELECT e.id, e.slug, e.name, e.description, e.duration_minutes, e.pass_pct, e.color, e.short_label,
-           e.price_inr_paise,
+           e.price_inr_paise, e.sections,
            (SELECT COALESCE(MAX(c), 0) FROM (
               SELECT COUNT(*) AS c FROM questions WHERE exam_id = e.id AND active = 1 GROUP BY set_number
            )) AS question_count,
@@ -41,6 +42,7 @@ router.get('/', optionalAuth, (req, res) => {
   res.json({
     exams: exams.map(e => ({
       ...e,
+      sections: Sections.parse(e.sections),
       enrolled: enrolledSlugs.has(e.slug)
     }))
   });
@@ -90,7 +92,8 @@ router.get('/:slug/sets', requireAuth, (req, res) => {
   res.json({
     exam: {
       slug: exam.slug, name: exam.name, durationMinutes: exam.duration_minutes,
-      passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label
+      passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label,
+      sections: Sections.parse(exam.sections)
     },
     sets
   });
@@ -120,10 +123,11 @@ router.post('/:slug/start', requireAuth, (req, res) => {
     }
   }
 
-  const questions = db.prepare(`
-    SELECT id, seq, text, option_a, option_b, option_c, option_d
+  const sections = Sections.parse(exam.sections);
+  const { questions, groups } = Sections.arrange(sections, db.prepare(`
+    SELECT id, seq, text, option_a, option_b, option_c, option_d, section, image_mime, image_data
     FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 ORDER BY seq
-  `).all(exam.id, setNumber);
+  `).all(exam.id, setNumber));
 
   if(!questions.length){
     return res.status(404).json({ error: 'That practice set has no questions yet.' });
@@ -150,10 +154,15 @@ router.post('/:slug/start', requireAuth, (req, res) => {
       passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label
     },
     setNumber,
+    // Sectioned exams: the sections in order, each with its own time limit. Questions come grouped
+    // in this order. null = one timer (durationMinutes) for the whole set.
+    sections: groups,
     // correct_index is intentionally withheld from the client here.
     questions: questions.map(q => ({
       id: q.id, seq: q.seq, text: q.text,
-      options: [q.option_a, q.option_b, q.option_c, q.option_d]
+      options: [q.option_a, q.option_b, q.option_c, q.option_d],
+      section: groups ? q.section : undefined,
+      image: Sections.imageUrl(q)
     }))
   });
 });
@@ -180,6 +189,8 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
       SELECT * FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 ORDER BY seq
     `).all(exam.id, attempt.set_number);
   }
+  const sections = Sections.parse(exam.sections);
+  questions = Sections.arrange(sections, questions).questions;
 
   const insertAnswer = db.prepare(`
     INSERT INTO attempt_answers (attempt_id, question_id, selected_index, is_correct)
@@ -199,7 +210,8 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
       detail.push({
         questionId: q.id, seq: q.seq, text: q.text,
         options: [q.option_a, q.option_b, q.option_c, q.option_d],
-        selectedIndex: selected, correctIndex: q.correct_index, isCorrect: !!isCorrect
+        selectedIndex: selected, correctIndex: q.correct_index, isCorrect: !!isCorrect,
+        section: sections ? q.section : undefined, image: Sections.imageUrl(q)
       });
     }
     const total = questions.length;
@@ -221,6 +233,7 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
     correctCount, total, scorePct,
     passed: scorePct >= exam.pass_pct,
     passPct: exam.pass_pct,
+    sections: Sections.breakdown(sections, detail),
     detail
   });
 });
@@ -262,12 +275,19 @@ router.get('/attempts/:id', requireAuth, (req, res) => {
   if(!attempt || !attempt.finished_at) return res.status(404).json({ error: 'Result not found.' });
 
   const exam = db.prepare('SELECT * FROM exams WHERE id = ?').get(attempt.exam_id);
-  const rows = db.prepare(`
+  const sections = Sections.parse(exam.sections);
+  const rows = Sections.arrange(sections, db.prepare(`
     SELECT aa.selected_index, aa.is_correct, q.id AS question_id, q.seq, q.text,
-           q.option_a, q.option_b, q.option_c, q.option_d, q.correct_index
+           q.option_a, q.option_b, q.option_c, q.option_d, q.correct_index, q.section, q.image_mime, q.image_data
     FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
     WHERE aa.attempt_id = ? ORDER BY q.seq
-  `).all(attemptId);
+  `).all(attemptId)).questions;
+  const detail = rows.map(r => ({
+    questionId: r.question_id, seq: r.seq, text: r.text,
+    options: [r.option_a, r.option_b, r.option_c, r.option_d],
+    selectedIndex: r.selected_index, correctIndex: r.correct_index, isCorrect: !!r.is_correct,
+    section: sections ? r.section : undefined, image: Sections.imageUrl(r)
+  }));
 
   res.json({
     attemptId,
@@ -275,11 +295,8 @@ router.get('/attempts/:id', requireAuth, (req, res) => {
     setNumber: attempt.set_number,
     correctCount: attempt.correct_count, total: attempt.total_count, scorePct: attempt.score_pct,
     passed: !!attempt.passed, passPct: exam.pass_pct,
-    detail: rows.map(r => ({
-      questionId: r.question_id, seq: r.seq, text: r.text,
-      options: [r.option_a, r.option_b, r.option_c, r.option_d],
-      selectedIndex: r.selected_index, correctIndex: r.correct_index, isCorrect: !!r.is_correct
-    }))
+    sections: Sections.breakdown(sections, detail),
+    detail
   });
 });
 

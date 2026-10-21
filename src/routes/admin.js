@@ -7,11 +7,13 @@ const { parseCsv, toQuestionRows } = require('../csv');
 const settings = require('../settings');
 const reviews = require('../reviews');
 const photos = require('../photos');
+const Sections = require('../sections');
 
 const router = express.Router();
 router.use(requireAdmin);          // every route below needs a logged-in admin (checked in the database each time)
 
 const SET_COUNT = 5;
+const MAX_IMAGE_BYTES = 1024 * 1024;   // per question image, after the admin page has resized it
 const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f]/;
 
 function audit(req, action, detail){
@@ -35,7 +37,20 @@ function describeExams(onlyId){
   const setRows = db.prepare('SELECT exam_id, set_number, COUNT(*) AS c FROM questions WHERE active = 1 GROUP BY exam_id, set_number').all();
   const paidRows = db.prepare("SELECT exam_id, COUNT(*) AS c FROM enrollments WHERE status = 'paid' AND amount_paise > 0 GROUP BY exam_id").all();
   const attemptRows = db.prepare('SELECT exam_id, COUNT(*) AS c FROM attempts WHERE finished_at IS NOT NULL GROUP BY exam_id').all();
+  const sectionRows = db.prepare('SELECT exam_id, set_number, section, COUNT(*) AS c FROM questions WHERE active = 1 GROUP BY exam_id, set_number, section').all();
   return exams.map(e => {
+    const sections = Sections.parse(e.sections);
+    // Per section, how many questions each set has (questions with a missing/unknown section count
+    // towards the last section, which is where students see them).
+    const sectionCounts = sections && sections.map(s => ({ name: s.name, sets: Array(SET_COUNT).fill(0) }));
+    if(sections){
+      for(const r of sectionRows){
+        if(r.exam_id !== e.id || r.set_number < 1 || r.set_number > SET_COUNT) continue;
+        let i = sections.findIndex(s => s.name === r.section);
+        if(i === -1) i = sections.length - 1;
+        sectionCounts[i].sets[r.set_number - 1] += r.c;
+      }
+    }
     const setCounts = Array.from({ length: SET_COUNT }, (_, i) => {
       const r = setRows.find(x => x.exam_id === e.id && x.set_number === i + 1);
       return r ? r.c : 0;
@@ -48,6 +63,7 @@ function describeExams(onlyId){
       durationMinutes: e.duration_minutes, passPct: e.pass_pct,
       priceInr: e.price_inr_paise / 100,
       active: !!e.active, source: e.source,
+      sections, sectionCounts,
       setCounts, totalQuestions: setCounts.reduce((a, b) => a + b, 0),
       paidEnrollments: paid ? paid.c : 0, attempts: att ? att.c : 0
     };
@@ -84,9 +100,16 @@ function validateExam(body, creating){
   if(!/^#[0-9a-fA-F]{6}$/.test(color)) errors.color = 'Pick a colour like #22c9a3.';
   else v.color = color.toLowerCase();
 
-  const dur = b.durationMinutes;
-  if(!Number.isInteger(dur) || dur < 5 || dur > 300) errors.durationMinutes = 'Time limit must be a whole number of minutes, 5-300.';
-  else v.duration_minutes = dur;
+  // With sections, each section has its own time limit and the total is their sum.
+  const sec = Sections.validate(b.sections);
+  if(sec.error) errors.sections = sec.error;
+  else v.sections = sec.value;
+  if(v.sections) v.duration_minutes = Sections.totalMinutes(v.sections);
+  else {
+    const dur = b.durationMinutes;
+    if(!Number.isInteger(dur) || dur < 5 || dur > 300) errors.durationMinutes = 'Time limit must be a whole number of minutes, 5-300.';
+    else v.duration_minutes = dur;
+  }
 
   const pass = b.passPct;
   if(!Number.isInteger(pass) || pass < 1 || pass > 100) errors.passPct = 'Pass mark must be a whole number, 1-100.';
@@ -116,9 +139,10 @@ router.post('/exams', (req, res) => {
   if(Object.keys(errors).length) return fail(res, 400, 'Please fix the highlighted fields.', { fields: errors });
   // New certificates start hidden ("draft") until they have questions and you publish them.
   const info = db.prepare(`
-    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, active, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
-  `).run(values.slug, values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise);
+    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, active, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
+  `).run(values.slug, values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
+    values.sections ? JSON.stringify(values.sections) : null);
   audit(req, 'exam.create', `${values.slug} ("${values.name}")`);
   res.status(201).json({ exam: describeExams(info.lastInsertRowid)[0] });
 });
@@ -132,10 +156,18 @@ router.put('/exams/:id', (req, res) => {
   }
   const { errors, values } = validateExam(req.body, false);
   if(Object.keys(errors).length) return fail(res, 400, 'Please fix the highlighted fields.', { fields: errors });
-  db.prepare(`
-    UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, source = 'admin'
-    WHERE id = ?
-  `).run(values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise, id);
+  // A section renamed in place (same position, old name no longer used) takes its questions with it.
+  const before = Sections.parse(exam.sections) || [];
+  const after = values.sections || [];
+  const renames = before.map((s, i) => after[i] && after[i].name !== s.name && !after.some(a => a.name === s.name) ? [s.name, after[i].name] : null).filter(Boolean);
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, sections = ?, source = 'admin'
+      WHERE id = ?
+    `).run(values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
+      values.sections ? JSON.stringify(values.sections) : null, id);
+    for(const [from, to] of renames) db.prepare('UPDATE questions SET section = ? WHERE exam_id = ? AND section = ?').run(to, id, from);
+  })();
   audit(req, 'exam.update', `${exam.slug}`);
   res.json({ exam: describeExams(id)[0] });
 });
@@ -174,16 +206,51 @@ router.delete('/exams/:id', (req, res) => {
 
 // ---------------------------------------------------------------- questions
 
-function validateQuestion(q){
+// Reads an uploaded question image (a data URL or plain base64). Returns { buf, mime } or { error }.
+function readImage(image){
+  const b64 = String(image).replace(/^data:[^;,]*;base64,/, '');
+  if(!/^[A-Za-z0-9+/=\s]+$/.test(b64)) return { error: 'The image could not be read.' };
+  const buf = Buffer.from(b64, 'base64');
+  const mime = photos.sniff(buf);
+  if(!mime) return { error: 'Only JPEG, PNG or WebP images can be used.' };
+  if(buf.length > MAX_IMAGE_BYTES) return { error: 'That image is too large (max 1 MB).' };
+  return { buf, mime };
+}
+
+// `exam` gives the sections a question can go in. `existing` (when editing) keeps the current image
+// unless `image` is sent: a new image replaces it, null removes it.
+function validateQuestion(q, exam, existing){
+  let image = existing && existing.image_data ? { buf: existing.image_data, mime: existing.image_mime } : null;
+  if(q.image === null || q.image === '') image = null;
+  else if(q.image !== undefined){
+    if(typeof q.image !== 'string') return { error: 'The image could not be read.' };
+    const r = readImage(q.image);
+    if(r.error) return { error: r.error };
+    image = r;
+  }
   const text = typeof q.text === 'string' ? q.text.trim() : '';
-  if(text.length < 10 || text.length > 500) return { error: 'The question must be 10-500 characters.' };
+  // A question that is a picture (a diagram, a graph, a typed-out equation) only needs a short caption.
+  if(image ? text.length > 500 : (text.length < 10 || text.length > 500)) return { error: image ? 'The question text must be at most 500 characters.' : 'The question must be 10-500 characters (or attach an image).' };
   if(CONTROL_RE.test(text)) return { error: 'The question contains characters that are not allowed.' };
+  const sections = exam && Sections.parse(exam.sections);
+  let section = null;
+  if(sections){
+    const wanted = typeof q.section === 'string' ? q.section.trim() : '';
+    const match = sections.find(s => s.name.toLowerCase() === wanted.toLowerCase());
+    if(!match) return { error: 'Choose a section: ' + sections.map(s => s.name).join(', ') + '.' };
+    section = match.name;
+  }
   if(!Array.isArray(q.options) || q.options.length !== 4) return { error: 'Provide exactly 4 answer options.' };
   const options = q.options.map(o => (typeof o === 'string' ? o.trim() : ''));
   if(options.some(o => !o || o.length > 200 || CONTROL_RE.test(o))) return { error: 'Each answer option must be 1-200 characters.' };
   if(new Set(options.map(o => o.toLowerCase())).size !== 4) return { error: 'The 4 answer options must all be different.' };
   if(!Number.isInteger(q.correctIndex) || q.correctIndex < 0 || q.correctIndex > 3) return { error: 'Choose which option is the correct answer.' };
-  return { clean: { text, options, correctIndex: q.correctIndex } };
+  return { clean: { text, options, correctIndex: q.correctIndex, section, image } };
+}
+
+// Two questions are "the same" (copies in different sets) when their text AND image match.
+function questionKey(text, imageBytes){
+  return String(text).trim().toLowerCase() + '|' + (imageBytes || 0);
 }
 
 function setCountsFor(examId){
@@ -201,9 +268,10 @@ function leastFullSet(counts){
 function insertQuestion(examId, setNumber, clean){
   const seq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM questions WHERE exam_id = ? AND set_number = ?').get(examId, setNumber).n;
   db.prepare(`
-    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-  `).run(examId, setNumber, seq, clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex);
+    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `).run(examId, setNumber, seq, clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex,
+    clean.section, clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null);
 }
 function markAdminManaged(examId){
   db.prepare("UPDATE exams SET source = 'admin' WHERE id = ?").run(examId);
@@ -212,27 +280,40 @@ function markAdminManaged(examId){
 router.get('/exams/:id/questions', (req, res) => {
   const id = toId(req.params.id);
   if(!id || !db.prepare('SELECT 1 FROM exams WHERE id = ?').get(id)) return fail(res, 404, 'Certificate not found.');
-  const rows = db.prepare('SELECT * FROM questions WHERE exam_id = ? AND active = 1 ORDER BY set_number, seq').all(id);
-  const setsByText = new Map();
+  const rows = db.prepare(`
+    SELECT id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section,
+           COALESCE(length(image_data), 0) AS image_bytes
+    FROM questions WHERE exam_id = ? AND active = 1 ORDER BY set_number, seq
+  `).all(id);
+  const setsByKey = new Map();
   for(const r of rows){
-    const k = r.text.trim().toLowerCase();
-    if(!setsByText.has(k)) setsByText.set(k, []);
-    setsByText.get(k).push(r.set_number);
+    const k = questionKey(r.text, r.image_bytes);
+    if(!setsByKey.has(k)) setsByKey.set(k, []);
+    setsByKey.get(k).push(r.set_number);
   }
   res.json({
     questions: rows.map(r => ({
       id: r.id, set: r.set_number, seq: r.seq, text: r.text,
       options: [r.option_a, r.option_b, r.option_c, r.option_d], correctIndex: r.correct_index,
-      alsoInSets: [...new Set(setsByText.get(r.text.trim().toLowerCase()).filter(s => s !== r.set_number))]
+      section: r.section, hasImage: r.image_bytes > 0,
+      alsoInSets: [...new Set(setsByKey.get(questionKey(r.text, r.image_bytes)).filter(s => s !== r.set_number))]
     }))
   });
+});
+
+// The image attached to a question, as a data URL (loaded on demand so the question list stays small).
+router.get('/questions/:id/image', (req, res) => {
+  const id = toId(req.params.id);
+  const row = id && db.prepare('SELECT image_mime, image_data FROM questions WHERE id = ?').get(id);
+  if(!row) return fail(res, 404, 'Question not found.');
+  res.json({ image: Sections.imageUrl(row) });
 });
 
 router.post('/exams/:id/questions', (req, res) => {
   const id = toId(req.params.id);
   const exam = id && db.prepare('SELECT * FROM exams WHERE id = ?').get(id);
   if(!exam) return fail(res, 404, 'Certificate not found.');
-  const { error, clean } = validateQuestion(req.body || {});
+  const { error, clean } = validateQuestion(req.body || {}, exam);
   if(error) return fail(res, 400, error);
 
   const counts = setCountsFor(id);
@@ -242,8 +323,8 @@ router.post('/exams/:id/questions', (req, res) => {
   else if(Number.isInteger(wanted) && wanted >= 1 && wanted <= SET_COUNT) setNumber = wanted;
   else return fail(res, 400, `Choose a set from 1 to ${SET_COUNT}, or "auto".`);
 
-  const dup = db.prepare('SELECT 1 FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 AND lower(trim(text)) = ?')
-    .get(id, setNumber, clean.text.toLowerCase());
+  const dup = db.prepare('SELECT 1 FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 AND lower(trim(text)) = ? AND COALESCE(length(image_data), 0) = ?')
+    .get(id, setNumber, clean.text.toLowerCase(), clean.image ? clean.image.buf.length : 0);
   if(dup) return fail(res, 400, `Set ${setNumber} already contains this exact question.`);
 
   insertQuestion(id, setNumber, clean);
@@ -256,23 +337,29 @@ router.put('/questions/:id', (req, res) => {
   const id = toId(req.params.id);
   const row = id && db.prepare('SELECT * FROM questions WHERE id = ? AND active = 1').get(id);
   if(!row) return fail(res, 404, 'Question not found.');
-  const { error, clean } = validateQuestion(req.body || {});
+  const exam = db.prepare('SELECT * FROM exams WHERE id = ?').get(row.exam_id);
+  const { error, clean } = validateQuestion(req.body || {}, exam, row);
   if(error) return fail(res, 400, error);
 
-  const oldKey = row.text.trim().toLowerCase();
+  const oldBytes = row.image_data ? row.image_data.length : 0;
   const targets = (req.body || {}).applyToCopies
-    ? db.prepare('SELECT * FROM questions WHERE exam_id = ? AND active = 1 AND lower(trim(text)) = ?').all(row.exam_id, oldKey)
+    ? db.prepare('SELECT * FROM questions WHERE exam_id = ? AND active = 1 AND lower(trim(text)) = ? AND COALESCE(length(image_data), 0) = ?')
+        .all(row.exam_id, row.text.trim().toLowerCase(), oldBytes)
     : [row];
   const targetIds = targets.map(t => t.id);
   const newKey = clean.text.toLowerCase();
+  const newBytes = clean.image ? clean.image.buf.length : 0;
   for(const t of targets){
-    const clash = db.prepare('SELECT id FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 AND lower(trim(text)) = ?')
-      .all(row.exam_id, t.set_number, newKey).find(r => !targetIds.includes(r.id));
+    const clash = db.prepare('SELECT id FROM questions WHERE exam_id = ? AND set_number = ? AND active = 1 AND lower(trim(text)) = ? AND COALESCE(length(image_data), 0) = ?')
+      .all(row.exam_id, t.set_number, newKey, newBytes).find(r => !targetIds.includes(r.id));
     if(clash) return fail(res, 400, `Set ${t.set_number} already contains a question with this exact text.`);
   }
   db.transaction(() => {
-    const up = db.prepare('UPDATE questions SET text = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, correct_index = ? WHERE id = ?');
-    for(const t of targets) up.run(clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex, t.id);
+    const up = db.prepare('UPDATE questions SET text = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, correct_index = ?, section = ?, image_mime = ?, image_data = ? WHERE id = ?');
+    for(const t of targets){
+      up.run(clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex, clean.section,
+        clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null, t.id);
+    }
   })();
   markAdminManaged(row.exam_id);
   audit(req, 'question.edit', `#${id}${targets.length > 1 ? ` (+${targets.length - 1} copies)` : ''}`);
@@ -285,7 +372,8 @@ router.delete('/questions/:id', (req, res) => {
   if(!row) return fail(res, 404, 'Question not found.');
   const everywhere = req.query.everywhere === '1';
   const targets = everywhere
-    ? db.prepare('SELECT id FROM questions WHERE exam_id = ? AND active = 1 AND lower(trim(text)) = ?').all(row.exam_id, row.text.trim().toLowerCase())
+    ? db.prepare('SELECT id FROM questions WHERE exam_id = ? AND active = 1 AND lower(trim(text)) = ? AND COALESCE(length(image_data), 0) = ?')
+        .all(row.exam_id, row.text.trim().toLowerCase(), row.image_data ? row.image_data.length : 0)
     : [row];
   // "Deleted" questions are switched off, not erased, so results and in-progress attempts that used them keep working.
   const off = db.prepare('UPDATE questions SET active = 0 WHERE id = ?');
@@ -318,7 +406,7 @@ router.post('/exams/:id/import', (req, res) => {
   const counts = setCountsFor(id);
   const before = counts.slice();
   const seen = Array.from({ length: SET_COUNT + 1 }, () => new Set());
-  for(const r of db.prepare('SELECT set_number, lower(trim(text)) AS k FROM questions WHERE exam_id = ? AND active = 1').all(id)){
+  for(const r of db.prepare('SELECT set_number, lower(trim(text)) AS k FROM questions WHERE exam_id = ? AND active = 1 AND image_data IS NULL').all(id)){
     if(seen[r.set_number]) seen[r.set_number].add(r.k);
   }
 
@@ -326,7 +414,7 @@ router.post('/exams/:id/import', (req, res) => {
   const planned = [];
   for(const it of items){
     if(it.error){ rowErrors.push({ row: it.line, message: it.error }); continue; }
-    const { error, clean } = validateQuestion(it);
+    const { error, clean } = validateQuestion(it, exam);
     if(error){ rowErrors.push({ row: it.line, message: error }); continue; }
     const key = clean.text.toLowerCase();
     let setNumber;
