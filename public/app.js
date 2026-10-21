@@ -228,7 +228,6 @@ const CONTACT = {
 };
 const DEFAULT_ABOUT = [
   'CertBench is a practice platform for people preparing for IT certification exams. Every question is an original practice question written for CertBench, not a copy of real exam content, so you are practicing the concepts rather than memorizing real exam questions.',
-  'Answers are graded on the server and your results are saved to your account. Correct answers are only revealed after you submit, just like a real exam.',
   'CertBench is an independent project and is not affiliated with or endorsed by Microsoft, AWS, Google, or the Cloud Native Computing Foundation.'
 ];
 
@@ -272,10 +271,6 @@ const ICON_BOLT = [ { tag:'path', attrs:{ d:'M13 2 4 14h7l-1 8 9-12h-7l1-8z' } }
 const ICON_LOCK = [
   { tag:'rect', attrs:{ x:'4', y:'11', width:'16', height:'10', rx:'2' } },
   { tag:'path', attrs:{ d:'M8 11V7a4 4 0 0 1 7.5-2' } }
-];
-const ICON_CHART = [
-  { tag:'path', attrs:{ d:'M3 3v18h18' } },
-  { tag:'path', attrs:{ d:'m7 15 4-4 3 3 5-6' } }
 ];
 const ICON_PHONE_APP = [
   { tag:'rect', attrs:{ x:'6', y:'2', width:'12', height:'20', rx:'2.5' } },
@@ -340,6 +335,7 @@ function reviewCard(r, featured){
 
 // Home page "What learners say" section. Only real, approved reviews are shown; reviewers are
 // people who finished at least one practice set, so each one gets a "Verified learner" tag.
+function hasLandingReviews(){ return !!(state.topReviews && state.topReviews.reviews && state.topReviews.reviews.length); }
 function renderLandingReviews(){
   const tr = state.topReviews || { reviews: [], summary: { count: 0, average: null, breakdown: {} } };
   const sum = tr.summary || { count: 0 };
@@ -351,15 +347,8 @@ function renderLandingReviews(){
     ])
   ]);
 
-  if(!tr.reviews.length){
-    sec.appendChild(el('div',{class:'reviews-empty'},[
-      el('div',{class:'reviews-empty-stars', 'aria-hidden':'true'},['★★★★★']),
-      el('h3',{},['Be among the first to rate CertBench']),
-      el('p',{},['Finish any practice set and you can rate us from your results page. The best reviews will be featured right here.']),
-      authLink('register','btn btn-primary',['Start practising free', icon(ICON_ARROW, 16)])
-    ]));
-    return sec;
-  }
+  // No approved reviews yet: leave the section (and its menu links) out rather than show an empty placeholder.
+  if(!tr.reviews.length) return null;
 
   // Summary panel: average, stars and a 5-to-1 breakdown.
   const b = sum.breakdown || {};
@@ -438,6 +427,7 @@ function landingFacts(){
     f.samePerSet = per.length === 1; f.perSet = per[0];
     const pass = Array.from(new Set(src.map(x => x.pass_pct)));
     f.samePass = pass.length === 1; f.passPct = pass[0];
+    f.totalQ = src.reduce((n, x) => n + (x.set_count || 0) * (x.question_count || 0), 0);
   }
   return f;
 }
@@ -447,7 +437,9 @@ function promoMessage(){
   if(p && p.text) return p.text;
   const f = landingFacts();
   if(!f.n) return null;
-  return '🎓 ' + plural(f.n, 'exam') + ' ready to practice — ' + joinNames(f.catLabels);
+  // The bar is for news; the exam count and categories are already in the hero and the exam list.
+  if(landingExamList().some(x => x.label === 'VIT')) return '🆕 New: full-length VITEEE 2027 mock with section-wise timers and diagram questions';
+  return '🎓 ' + plural(f.n, 'exam') + ' ready to practice';
 }
 function heroSubText(){
   const f = landingFacts();
@@ -455,14 +447,12 @@ function heroSubText(){
   if(!f.n) return 'Timed mock exams with ' + tail;
   const what = f.jee && f.it ? plural(f.it, 'IT certification') + ' plus ' + (f.entranceFree ? 'free ' : '') + f.entrance + ' practice'
              : f.jee ? f.entrance + ' practice' : plural(f.it, 'IT certification');
-  return 'Timed mock exams for ' + what + ', ' + f.setCount + ' fresh practice sets each, and ' + tail;
+  return 'Timed mock exams for ' + what + ', with ' + tail;
 }
 function howStepTexts(){
   const f = landingFacts();
-  const entranceLabels = EXAM_CATEGORIES.filter(c => ENTRANCE_CATEGORIES.includes(c.id)).map(c => c.label);
-  const itCats = f.catLabels.filter(c => !entranceLabels.includes(c));
   const one = !f.n ? 'Choose the certification you are preparing for.'
-    : (f.it ? 'Choose from ' + plural(f.it, 'IT certification') + ' across ' + joinNames(itCats) : 'Choose your subject')
+    : (f.it ? 'Choose from ' + plural(f.it, 'IT certification') : 'Choose your subject')
       + (f.jee && f.it ? ', or practise for ' + f.entrance + (f.entranceFree ? ' for free.' : '.') : '.');
   const qTxt = f.samePerSet && f.perSet ? ' of ' + f.perSet + ' questions' : '';
   const passTxt = f.samePass ? ' with ' + f.passPct + '% or more' : ' (the pass mark is shown on each exam)';
@@ -750,7 +740,7 @@ function renderLanding(){
     return b;
   }
   const nav = el('nav',{class:'landing-nav', 'aria-label':'Main'},[
-    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), navButton('Reviews','reviews'), navButton('About Us','about'), navButton('Contact','contact')
+    navButton('Home','top'), dd, navButton('Features','features'), navButton('How it works','how'), hasLandingReviews() ? navButton('Reviews','reviews') : null, navButton('About Us','about'), navButton('Contact','contact')
   ]);
 
   const headerActions = el('div',{class:'landing-header-actions'},[
@@ -782,24 +772,21 @@ function renderLanding(){
   heroCtas.appendChild(authLink('register', 'btn btn-primary hero-btn', ['Get started free', icon(ICON_ARROW, 18)]));
   heroCtas.appendChild(authLink('login', 'btn btn-ghost hero-btn', ['I already have an account']));
   heroCopy.appendChild(heroCtas);
-  const hasFree = navExams.some(x => x.price === 0);
-  heroCopy.appendChild(el('ul',{class:'hero-trust'},[
-    el('li',{},[icon(ICON_CHECK, 16), 'Server-graded results']),
-    el('li',{},[icon(ICON_CHECK, 16), facts.setCount + ' practice sets per exam']),
-    hasFree ? el('li',{},[icon(ICON_CHECK, 16), 'Free exam to try']) : el('li',{},[icon(ICON_CHECK, 16), 'Works on your phone'])
-  ]));
   heroInner.appendChild(heroCopy);
   heroInner.appendChild(el('div',{class:'hero-visual'},[ renderHeroMockup() ]));
   hero.appendChild(heroInner);
   wrap.appendChild(hero);
 
   // ---- stats strip: every number comes from the live exam data ----
+  // Sets, questions per set and the pass mark are shown above the exam list, so they aren't repeated here.
   function stat(v, label){ return el('div',{class:'stat'},[ el('b',{},[String(v)]), el('span',{},[label]) ]); }
+  const freeExams = navExams.filter(x => x.price === 0).length;
+  const catCount = facts.catLabels.length;
   wrap.appendChild(el('section',{class:'stats-strip'},[
     stat(facts.n || '—', facts.n === 1 ? 'Exam' : 'Exams'),
-    stat(facts.setCount, 'Practice sets each'),
-    facts.samePerSet && facts.perSet ? stat(facts.perSet, 'Questions per set') : stat('Timed', 'Like the real exam'),
-    facts.samePass ? stat(facts.passPct + '%', 'Pass mark') : stat('Instant', 'Results')
+    catCount ? stat(catCount, catCount === 1 ? 'Subject area' : 'Subject areas') : stat('Timed', 'Like the real exam'),
+    facts.totalQ >= 100 ? stat((Math.floor(facts.totalQ / 100) * 100).toLocaleString('en-IN') + '+', 'Practice questions') : stat('Instant', 'Results'),
+    freeExams ? stat(freeExams, freeExams === 1 ? 'Free exam to try' : 'Free exams to try') : stat('Instant', 'Results')
   ]));
 
   // ---- exams: real exams, real prices ----
@@ -924,12 +911,11 @@ function renderLanding(){
       el('p',{class:'section-sub'},['A focused practice environment that shows you exactly where you stand.'])
     ]),
     el('div',{class:'bento'},[
-      feature(ICON_CLOCK, 'A real countdown', 'Every set runs against the clock, and is submitted automatically when time runs out, just like the real thing.', 'span-2'),
+      // Unlocking, grading and My results are covered by "How it works", and original questions by About Us.
+      feature(ICON_CLOCK, 'A real countdown', 'Every set runs against the clock and is submitted automatically when time runs out. VITEEE times each section on its own, like the real exam.'),
       feature(ICON_GRID, 'Question palette', 'Jump to any question and see at a glance what you have answered, skipped or not yet visited.'),
-      feature(ICON_BOLT, 'Instant, trustworthy grading', 'Answers are checked on the server, and you get your score with a full answer breakdown the moment you submit.'),
-      feature(ICON_LOCK, 'Unlock as you improve', 'Pass a set to unlock the next one, so you build up from the basics instead of guessing.'),
-      feature(ICON_CHART, 'Track your progress', 'Every attempt is saved under My results with your score, date and pass or fail.'),
-      feature(ICON_PHONE_APP, 'Practice anywhere', 'Works on your phone and can be installed like an app from your browser.', 'span-2')
+      feature(ICON_CART, 'Pay once per exam', 'No subscription: buy only the exams you need, or add several to the cart and pay once.'),
+      feature(ICON_PHONE_APP, 'Practice anywhere', 'Works on your phone and can be installed like an app from your browser.')
     ])
   ]));
 
@@ -955,7 +941,8 @@ function renderLanding(){
   ]));
 
   // ---- ratings & reviews (top 5 approved 4-5 star reviews, moderated in the admin panel) ----
-  wrap.appendChild(renderLandingReviews());
+  const reviewsSec = renderLandingReviews();
+  if(reviewsSec) wrap.appendChild(reviewsSec);
 
   // ---- about + contact us (both edited in the admin panel under Site settings) ----
   const ci = contactInfo();
@@ -964,7 +951,7 @@ function renderLanding(){
       el('div',{class:'about-main'},[
         el('div',{class:'section-head'},[
           el('span',{class:'eyebrow'},['About Us']),
-          el('h2',{class:'section-title'},['About Us'])
+          el('h2',{class:'section-title'},['About CertBench'])
         ]),
         el('div',{class:'about-copy'}, aboutParagraphs().map(t => el('p',{},[t]))),
         renderAboutPhotos()
@@ -1006,7 +993,7 @@ function renderLanding(){
       ]),
       el('div',{class:'site-foot-links'},[
         footLink('Exams','exams'), footLink('Features','features'), footLink('How it works','how'),
-        footLink('Reviews','reviews'), footLink('About Us','about'), footLink('Contact','contact'),
+        hasLandingReviews() ? footLink('Reviews','reviews') : null, footLink('About Us','about'), footLink('Contact','contact'),
         authLink('login','foot-link',['Sign in'])
       ])
     ]),

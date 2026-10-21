@@ -589,9 +589,6 @@ footer.app-foot{ text-align:center; padding:1.75rem 1.5rem; color:var(--text-fai
 .hero-sub{ font-size:clamp(1rem,1.4vw,1.14rem); line-height:1.65; color:var(--text-dim); max-width:54ch; margin:0 0 2.1rem; }
 .hero-ctas{ display:flex; gap:.8rem; flex-wrap:wrap; }
 .hero-btn{ padding:.95em 1.65em; font-size:.98rem; border-radius:14px; }
-.hero-trust{ list-style:none; display:flex; flex-wrap:wrap; gap:.6rem 1.4rem; padding:0; margin:1.9rem 0 0; font-size:.86rem; color:var(--text-dim); }
-.hero-trust li{ display:flex; align-items:center; gap:.45em; }
-.hero-trust svg{ color:var(--success); }
 .hero-visual{ min-width:0; display:flex; justify-content:center; }
 
 /* product mockup */
@@ -836,13 +833,6 @@ footer.app-foot{ text-align:center; padding:1.75rem 1.5rem; color:var(--text-fai
 .review-who{ display:flex; flex-direction:column; min-width:0; }
 .review-avatar{ box-shadow:none; flex-shrink:0; width:2.4rem; height:2.4rem; font-size:.95rem; }
 .review-meta{ color:var(--text-faint); font-size:.78rem; overflow-wrap:anywhere; }
-.reviews-empty{
-  text-align:center; padding:clamp(2rem,5vw,3rem) 1.5rem; border-radius:var(--radius-lg);
-  background:radial-gradient(500px 200px at 50% 0%, var(--warm-soft), transparent 70%), var(--panel); border:1px solid var(--panel-border);
-}
-.reviews-empty-stars{ font-size:2rem; letter-spacing:.15em; color:var(--accent-warm); opacity:.85; margin-bottom:.6rem; }
-.reviews-empty h3{ margin:0 0 .5rem; font-size:1.3rem; }
-.reviews-empty p{ margin:0 auto 1.4rem; max-width:46ch; color:var(--text-dim); line-height:1.6; }
 .review-cta{ margin:1.3rem 0 0; color:var(--text-dim); font-size:.9rem; }
 .review-cta-link{ color:var(--accent); font-weight:600; }
 @media (max-width:900px){ .reviews-layout{ grid-template-columns:1fr; } .rating-panel{ position:static; } }
