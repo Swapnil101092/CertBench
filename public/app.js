@@ -2726,8 +2726,12 @@ function signOut(){
 }
 
 /* ============ RENDER ============ */
+let lastRenderedScreen = null;
 function render(){
   root.innerHTML = '';
+  // A new screen opens at the top, not at the scroll position of the one before it.
+  const screenChanged = state.screen !== lastRenderedScreen;
+  lastRenderedScreen = state.screen;
   const container = el('div',{});
   container.style.display='flex'; container.style.flexDirection='column'; container.style.minHeight='100vh';
   if(state.screen !== 'landing') container.appendChild(topbar());
@@ -2753,6 +2757,7 @@ function render(){
     container.appendChild(el('footer',{class:'app-foot'},['CertBench — practice mock exams. Not affiliated with Microsoft, AWS, or the Cloud Native Computing Foundation.']));
   }
   root.appendChild(container);
+  if(screenChanged) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   const cu = state.currentUser;
   if(cu && !cu.accountType && !cu.isAdmin && state.screen === 'select') root.appendChild(renderAccountTypePrompt());
 
