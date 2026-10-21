@@ -3,8 +3,9 @@
 .cart-btn.on{ border-color:var(--accent); color:var(--accent); }
 .cart-count{ min-width:1.35em; height:1.35em; padding:0 .35em; border-radius:999px; background:var(--accent); color:var(--on-accent); font-size:.72rem; font-weight:700; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
 
-.cert-card .cart-toggle{ display:flex; align-items:center; justify-content:center; gap:.45em; margin-top:.55rem; }
-.cert-card .cart-toggle.added{ border-color:color-mix(in srgb, var(--success) 45%, var(--panel-border)); color:var(--success); background:var(--success-soft); }
+.cert-card .cart-toggle, .cert-card .cart-go{ display:flex; align-items:center; justify-content:center; gap:.45em; }
+.cert-card .link-btn.cart-toggle{ margin:.65rem auto 0; color:var(--text-dim); font-weight:500; }
+.cert-card .link-btn.cart-toggle:hover{ color:var(--danger); }
 
 .cart-bar{
   position:sticky; bottom:1rem; z-index:20; margin:1.75rem auto 0; max-width:720px;

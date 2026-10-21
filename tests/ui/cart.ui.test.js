@@ -31,9 +31,13 @@ test('cart: add two paid certificates, see the total, pay once, both unlock', as
   await page.waitForSelector('h1:has-text("Choose a mock exam")');
 
   const card = (name) => page.locator('.cert-card', { has: page.locator('.cert-name', { hasText: name }) });
+  // Paid exams are bought through the cart only: one "Add to cart — ₹…" button, no separate Enroll.
+  assert.match(await card(a.name).locator('.btn-primary').textContent(), /Add to cart — ₹/);
+  assert.doesNotMatch(await card(a.name).textContent(), /Enroll/);
   await card(a.name).locator('.cart-toggle').click();
   await card(b.name).locator('.cart-toggle').click();
   assert.match(await card(a.name).locator('.cart-toggle').textContent(), /In cart/);
+  assert.match(await card(a.name).locator('.btn-primary').textContent(), /Go to cart/);
   assert.equal((await page.textContent('.cart-btn .cart-count')).trim(), '2');
   assert.match(await page.textContent('.cart-bar'), /2 certificates.*₹498/);
 
@@ -46,8 +50,7 @@ test('cart: add two paid certificates, see the total, pay once, both unlock', as
   assert.equal((await page.textContent('.avatar-badge')).trim(), '2', 'the avatar shows how many are in the cart');
   assert.equal((await page.textContent('.cart-btn .cart-count')).trim(), '2');
 
-  await page.click('.user-chip');   // Cart lives in the account menu
-  await page.click('.cart-btn');
+  await card(a.name).locator('.cart-go').click();   // "Go to cart" on the card (the account menu has Cart too)
   await page.waitForSelector('h1:has-text("Your cart")');
   assert.equal(await page.locator('.cart-item').count(), 2);
   assert.match(await page.textContent('.cart-sum-total'), /₹498/);
