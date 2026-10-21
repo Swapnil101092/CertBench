@@ -1755,9 +1755,8 @@ function renderSelect(){
     el('p',{},['Each exam includes ' + (Math.max.apply(null, [0].concat(state.exams.map(e => e.set_count || 0))) || 5) + ' separate practice sets so you can retake it with fresh questions. Answers are graded on the server, so results are trustworthy.']),
     state.currentUser && state.currentUser.accountType && !state.currentUser.isAdmin ? (function(){
       const t = state.currentUser.accountType;
-      const sw = el('button',{class:'link-btn', type:'button'},['Switch to ' + ACCOUNT_TYPES[otherAccountType(t)].label]);
-      sw.addEventListener('click', switchAccountType);
-      return el('p',{class:'audience-note'},['Showing certificates for ' + ACCOUNT_TYPES[t].plural + '. ', sw]);
+      // Switching lives in the account menu only; this line just says what is shown.
+      return el('p',{class:'audience-note'},['Showing certificates for ' + ACCOUNT_TYPES[t].plural + '. You can switch from your account menu.']);
     })() : null
   ]));
 

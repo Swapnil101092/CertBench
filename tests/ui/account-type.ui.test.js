@@ -65,6 +65,7 @@ test('older account: asked once, then sees only its own exams, and can switch fr
   await page.waitForSelector('.type-prompt', { state: 'detached' });
   await page.waitForSelector('.audience-note');
   assert.match(await page.textContent('.audience-note'), /IT Professionals/);
+  assert.equal(await page.locator('.audience-note button').count(), 0);   // switch only in the account menu
   let names = (await page.locator('.cert-name').allTextContents()).join(' | ');
   assert.doesNotMatch(names, /VITEEE/);
   assert.match(names, /Azure/);
