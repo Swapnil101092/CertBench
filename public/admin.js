@@ -86,7 +86,7 @@ function guard(promise){
 var S = {
   view: 'overview',            // overview | exams | exam | exam-new | settings
   overview: null, exams: [], exam: null, questions: [], settings: null,
-  setFilter: 'all', search: '', editingQ: null, showAdd: false, showImport: false, meName: '',
+  setFilter: 'all', search: '', examQuery: '', editingQ: null, showAdd: false, showImport: false, meName: '',
   users: null, userQuery: '', userDetail: null,
   reviews: null, reviewFilter: 'pending'
 };
@@ -224,10 +224,20 @@ function viewExams(){
     el('h1', { class: 'adm-h1' }, ['Certificates']),
     el('button', { class: 'btn btn-primary', type: 'button', onclick: function(){ navigate('exam-new'); } }, ['+ Add certificate'])
   ]));
-  wrap.appendChild(el('div', { class: 'adm-card adm-table-wrap' }, [ el('table', { class: 'adm-table' }, [
-    el('thead', {}, [ el('tr', {}, ['Certificate', 'Price', 'Time / pass', 'Questions per set', 'Status', 'Students', ''].map(function(h){ return el('th', {}, [h]); })) ]),
-    el('tbody', {}, S.exams.map(function(e){
-      return el('tr', {}, [
+  // Search by name, slug or badge. Kept in S so it's still there after Manage → back.
+  var search = el('input', { class: 'adm-input adm-search', type: 'search', placeholder: 'Search certificates', 'aria-label': 'Search certificates', value: S.examQuery });
+  var count = el('span', { class: 'adm-hint' });
+  var tbody = el('tbody', {});
+  function fill(){
+    var q = S.examQuery.trim().toLowerCase();
+    var rows = S.exams.filter(function(e){
+      return !q || [e.name, e.slug, e.shortLabel].some(function(v){ return String(v).toLowerCase().indexOf(q) !== -1; });
+    });
+    count.textContent = q ? rows.length + ' of ' + S.exams.length : S.exams.length + ' total';
+    clear(tbody);
+    if(!rows.length) tbody.appendChild(el('tr', {}, [ el('td', { colspan: '7', class: 'adm-empty' }, ['No certificates match “' + S.examQuery.trim() + '”.']) ]));
+    rows.forEach(function(e){
+      tbody.appendChild(el('tr', {}, [
         el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug]) ]) ]) ]),
         el('td', {}, [rupees(e.priceInr)]),
         el('td', {}, [e.durationMinutes + ' min · ' + e.passPct + '%']),
@@ -235,8 +245,15 @@ function viewExams(){
         el('td', {}, [statusPill(e)]),
         el('td', {}, [e.paidEnrollments + ' paid · ' + e.attempts + ' attempts']),
         el('td', {}, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ openExam(e.id); } }, ['Manage']) ])
-      ]);
-    }))
+      ]));
+    });
+  }
+  search.addEventListener('input', function(){ S.examQuery = search.value; fill(); });
+  fill();
+  wrap.appendChild(el('div', { class: 'adm-toolbar' }, [ search, count ]));
+  wrap.appendChild(el('div', { class: 'adm-card adm-table-wrap' }, [ el('table', { class: 'adm-table adm-exams-table' }, [
+    el('thead', {}, [ el('tr', {}, ['Certificate', 'Price', 'Time / pass', 'Questions per set', 'Status', 'Students', ''].map(function(h){ return el('th', {}, [h]); })) ]),
+    tbody
   ]) ]));
   return wrap;
 }
