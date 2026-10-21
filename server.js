@@ -15,7 +15,41 @@ const visitRoutes = require('./src/routes/visits');
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(cors());
+app.disable('x-powered-by');
+
+// Security headers on every response.
+// The CSP allows only this site's own files, plus Razorpay Checkout (its script and payment window).
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://*.razorpay.com",
+  "frame-src https://*.razorpay.com",
+  "connect-src 'self' https://*.razorpay.com",
+  "img-src 'self' data: https:",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+app.use((req, res, next) => {
+  res.set({
+    'Content-Security-Policy': CSP,
+    'X-Frame-Options': 'DENY',                  // older browsers: never show the site inside another site's frame
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()'
+  });
+  if(req.secure) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+// The site and its API share one origin, so browsers need no CORS. Other origins are allowed only
+// when listed in CORS_ORIGINS (comma-separated), e.g. for a separate frontend.
+const corsOrigins = String(process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
+if(corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 // Admin requests may carry a CSV of questions or an About Us photo, so they get a larger limit. This must come BEFORE
 // the general parser (which then skips bodies that are already parsed).
 app.use('/api/admin', express.json({ limit: '3mb' }));
@@ -112,6 +146,11 @@ app.listen(PORT, () => {
     console.warn('[ADMIN] ADMIN_EMAILS is set but IGNORED: email sending is not configured (BREVO_API_KEY + EMAIL_FROM_ADDRESS, or EMAIL_USER / EMAIL_PASS).');
     console.warn('[ADMIN] Without real email, sign-up codes are shown on screen, so anyone could register with that address.');
     console.warn('[ADMIN] Configure email, or use `npm run make-admin -- <username>` from a shell on the server.');
+  }
+  const payments = require('./src/payments');
+  if(!payments.isConfigured()){
+    if(payments.devPaymentsAllowed()) console.warn('[PAYMENTS] Razorpay keys are not set: paid exams unlock for free (dev checkout). Never run a live site like this.');
+    else console.error('[PAYMENTS] Razorpay keys are not set: paid exams cannot be bought until RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are added.');
   }
   // Mobile numbers are verified by SMS at sign-up only when SMS is set up.
   if(require('./src/sms').isConfigured()) console.log('[SMS] Mobile verification at sign-up is ON (Brevo SMS, sender ' + process.env.SMS_SENDER + ').');

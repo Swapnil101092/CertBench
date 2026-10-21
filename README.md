@@ -67,7 +67,9 @@ panel (section 2i). No code changes or re-seeding needed.
 
 With no `RAZORPAY_*` keys set, clicking "Enroll" completes instantly for free — a dev
 fallback so you can build and test the whole enroll → unlock-exam flow with zero signup,
-same idea as the OTP dev fallback above.
+same idea as the OTP dev fallback above. This fallback works on a local machine only: on a
+live server (`NODE_ENV=production` or Railway) missing keys mean paid exams can't be bought,
+rather than becoming free. Set `ALLOW_DEV_PAYMENTS=1` to allow it anyway, e.g. on a staging site.
 
 To take real payments:
 

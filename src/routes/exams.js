@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { requireAuth, optionalAuth } = require('../auth');
 const Sections = require('../sections');
@@ -104,8 +105,19 @@ router.get('/:slug/sets', requireAuth, (req, res) => {
   });
 });
 
+// Each start saves the attempt and its question list, so one account can't start hundreds of
+// attempts and fill up the database. Counted per account, not per IP.
+const startLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => 'user:' + req.userId,
+  message: { error: 'You have started a lot of practice sets in the last hour. Please wait a little and try again.' }
+});
+
 // ---- POST /api/exams/:slug/start  (auth; requires a paid enrollment for priced exams) ----
-router.post('/:slug/start', requireAuth, (req, res) => {
+router.post('/:slug/start', requireAuth, startLimiter, (req, res) => {
   const exam = db.prepare('SELECT * FROM exams WHERE slug = ? AND active = 1').get(req.params.slug);
   if(!exam) return res.status(404).json({ error: 'Exam not found.' });
   if(!Audience.allowed(exam, req.userId)) return res.status(403).json({ error: Audience.deniedMessage(exam), audience: exam.audience });
