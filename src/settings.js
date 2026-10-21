@@ -13,6 +13,10 @@ const DEFAULTS = {
   promo_text: '',                    // blank = the site writes its own line from the live exam list
   visitor_counter_enabled: '1',      // home page "Total / Today's visitors" card
   about_text: DEFAULT_ABOUT,         // blank = this default
+  contact_enabled: '1',              // home page "Contact us" panel (and its menu links)
+  contact_show_address: '1',         // each detail can be hidden on its own
+  contact_show_phone: '1',
+  contact_show_email: '1',
   contact_title: 'Contact us',
   contact_intro: 'Questions about an exam, a payment or your account? Reach out and we will get back to you.',
   contact_address: 'F 710, Ayaan Society, Wagholi, Pune',
@@ -40,6 +44,10 @@ function getForAdmin(){
     promoText: r.promo_text,
     visitorCounterEnabled: r.visitor_counter_enabled === '1',
     aboutText: r.about_text,
+    contactEnabled: r.contact_enabled === '1',
+    contactShowAddress: r.contact_show_address === '1',
+    contactShowPhone: r.contact_show_phone === '1',
+    contactShowEmail: r.contact_show_email === '1',
     contactTitle: r.contact_title,
     contactIntro: r.contact_intro,
     contactAddress: r.contact_address,
@@ -58,7 +66,14 @@ function getPublic(){
     visitorCounter: { enabled: r.visitor_counter_enabled === '1' },
     about: aboutSource.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
     aboutPhotos: photos.list().map(p => ({ id: p.id, caption: p.caption, url: p.url })),
-    contact: { title: r.contact_title.trim() || DEFAULTS.contact_title, intro: r.contact_intro.trim(), address: r.contact_address, phone: r.contact_phone, email: r.contact_email }
+    // Hidden details are left out entirely, not just hidden by the page.
+    contact: r.contact_enabled === '1' ? {
+      enabled: true,
+      title: r.contact_title.trim() || DEFAULTS.contact_title, intro: r.contact_intro.trim(),
+      address: r.contact_show_address === '1' ? r.contact_address : null,
+      phone: r.contact_show_phone === '1' ? r.contact_phone : null,
+      email: r.contact_show_email === '1' ? r.contact_email : null
+    } : { enabled: false }
   };
 }
 
@@ -74,6 +89,11 @@ function validate(input){
   if('visitorCounterEnabled' in input){
     if(typeof input.visitorCounterEnabled !== 'boolean') errors.visitorCounterEnabled = 'Must be on or off.';
     else clean.visitor_counter_enabled = input.visitorCounterEnabled ? '1' : '0';
+  }
+  for(const [key, name] of [['contactEnabled', 'contact_enabled'], ['contactShowAddress', 'contact_show_address'], ['contactShowPhone', 'contact_show_phone'], ['contactShowEmail', 'contact_show_email']]){
+    if(!(key in input)) continue;
+    if(typeof input[key] !== 'boolean') errors[key] = 'Must be on or off.';
+    else clean[name] = input[key] ? '1' : '0';
   }
   if('promoText' in input){
     const v = str(input.promoText);

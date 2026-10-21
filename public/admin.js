@@ -1106,6 +1106,13 @@ function viewSettings(){
   var address = el('input', { class: 'adm-input', type: 'text', maxlength: '200', value: s.contactAddress });
   var phone = el('input', { class: 'adm-input', type: 'text', maxlength: '20', value: s.contactPhone });
   var email = el('input', { class: 'adm-input', type: 'text', maxlength: '254', value: s.contactEmail });
+  var contactOn = el('input', { type: 'checkbox', checked: s.contactEnabled });
+  var showAddress = el('input', { type: 'checkbox', checked: s.contactShowAddress });
+  var showPhone = el('input', { type: 'checkbox', checked: s.contactShowPhone });
+  var showEmail = el('input', { type: 'checkbox', checked: s.contactShowEmail });
+  var contactFields = el('div', {});
+  function syncContact(){ contactFields.classList.toggle('adm-dimmed', !contactOn.checked); }
+  contactOn.addEventListener('change', syncContact);
   var wrap = el('div', {});
   function err(key){ return el('div', { class: 'adm-err', 'data-for': key }); }
   var card = el('div', { class: 'adm-card' }, [
@@ -1117,18 +1124,26 @@ function viewSettings(){
     el('div', { class: 'adm-actions' }, [ el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ about.value = s.defaults.aboutText; } }, ['Fill in the standard text to edit it']) ]),
     el('h2', {}, ['Contact us panel']),
     el('p', { class: 'adm-hint' }, ['Shown next to the About Us section on the home page.']),
-    el('div', { class: 'adm-field' }, [ el('label', {}, ['Heading', cTitle]), err('contactTitle') ]),
-    el('div', { class: 'adm-field' }, [ el('label', {}, ['Intro line', cIntro]), err('contactIntro') ]),
-    el('div', { class: 'adm-field' }, [ el('label', {}, ['Address', address]), err('contactAddress') ]),
-    el('div', { class: 'adm-grid2' }, [
-      el('div', { class: 'adm-field' }, [ el('label', {}, ['Phone', phone]), err('contactPhone') ]),
-      el('div', { class: 'adm-field' }, [ el('label', {}, ['Email', email]), err('contactEmail') ])
-    ]),
+    el('label', { class: 'adm-check' }, [contactOn, ' Show the Contact us panel (and the Contact links in the menu and footer)']),
+    (function(){
+      [
+        el('div', { class: 'adm-field' }, [ el('label', {}, ['Heading', cTitle]), err('contactTitle') ]),
+        el('div', { class: 'adm-field' }, [ el('label', {}, ['Intro line', cIntro]), err('contactIntro') ]),
+        el('div', { class: 'adm-field' }, [ el('label', {}, ['Address', address]), el('label', { class: 'adm-check' }, [showAddress, ' Show the address']), err('contactAddress') ]),
+        el('div', { class: 'adm-grid2' }, [
+          el('div', { class: 'adm-field' }, [ el('label', {}, ['Phone', phone]), el('label', { class: 'adm-check' }, [showPhone, ' Show the phone number']), err('contactPhone') ]),
+          el('div', { class: 'adm-field' }, [ el('label', {}, ['Email', email]), el('label', { class: 'adm-check' }, [showEmail, ' Show the email address']), err('contactEmail') ])
+        ])
+      ].forEach(function(n){ contactFields.appendChild(n); });
+      syncContact();
+      return contactFields;
+    })(),
     el('div', { class: 'adm-actions' }, [
       el('button', { class: 'btn btn-primary', type: 'button', onclick: function(){
         Array.prototype.forEach.call(card.querySelectorAll('.adm-err'), function(n){ n.textContent = ''; });
         api('/settings', { method: 'PUT', body: {
           promoEnabled: promoOn.checked, promoText: promoText.value, aboutText: about.value,
+          contactEnabled: contactOn.checked, contactShowAddress: showAddress.checked, contactShowPhone: showPhone.checked, contactShowEmail: showEmail.checked,
           contactTitle: cTitle.value, contactIntro: cIntro.value,
           contactAddress: address.value, contactPhone: phone.value, contactEmail: email.value
         } }).then(function(d){

@@ -166,3 +166,5 @@ textarea.adm-input{ resize:vertical; line-height:1.5; }
 .adm-main [hidden]{ display:none !important; }
 .adm-field .adm-section-row label.adm-inline{ display:flex; font-weight:500; }
 .adm-section-row .adm-inline > input{ margin-top:0; width:5.5rem; }
+.adm-dimmed{ opacity:.5; }
+.adm-field label.adm-check{ display:flex; font-weight:500; margin:.45rem 0 0; }
