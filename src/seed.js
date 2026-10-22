@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const Explanations = require('./explanations');
 
 const BANKS = [
   {
@@ -734,8 +735,8 @@ function seed({ only } = {}){
   const getExamId = db.prepare('SELECT id FROM exams WHERE slug = ?');
   const deleteQuestions = db.prepare('DELETE FROM questions WHERE exam_id = ?');
   const insertQuestion = db.prepare(`
-    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data, explanation)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getExisting = db.prepare('SELECT id, source FROM exams WHERE slug = ?');
@@ -774,6 +775,7 @@ function seed({ only } = {}){
         ? (bank.seedSections || bank.sections).flatMap(s => (s.parts || [{ pool: s.name, questions: s.questions }])
             .map(part => ({ section: s.name, pool: bank.sectionPools[part.pool], perSet: part.questions })))
         : [{ section: null, pool: bank.questions, perSet: QUESTIONS_PER_SET }];
+      const explanations = Explanations.forSlug(bank.slug);
       const seqCounters = {}; // per set_number, running seq 1..n
       let unique = 0;
 
@@ -787,7 +789,7 @@ function seed({ only } = {}){
             const image = imageFile ? fs.readFileSync(path.join(bank.imageDir, imageFile)) : null;
             seqCounters[setNumber] = (seqCounters[setNumber] || 0) + 1;
             insertQuestion.run(examId, setNumber, seqCounters[setNumber], text, oa, ob, oc, od, newCorrect, g.section,
-              image ? 'image/png' : null, image);
+              image ? 'image/png' : null, image, explanations.get(text) || null);
           });
       }
 

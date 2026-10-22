@@ -245,7 +245,8 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
         questionId: q.id, seq: q.seq, text: q.text,
         options: [q.option_a, q.option_b, q.option_c, q.option_d],
         selectedIndex: selected, correctIndex: q.correct_index, isCorrect: !!isCorrect,
-        section: sections ? q.section : undefined, image: Sections.imageUrl(q)
+        section: sections ? q.section : undefined, image: Sections.imageUrl(q),
+        explanation: q.explanation || null
       });
     }
     sc = Marking.score(marking, detail);
@@ -311,7 +312,7 @@ router.get('/attempts/:id', requireAuth, (req, res) => {
   const sections = Sections.parse(exam.sections);
   const rows = Sections.arrange(sections, db.prepare(`
     SELECT aa.selected_index, aa.is_correct, q.id AS question_id, q.seq, q.text,
-           q.option_a, q.option_b, q.option_c, q.option_d, q.correct_index, q.section, q.image_mime, q.image_data
+           q.option_a, q.option_b, q.option_c, q.option_d, q.correct_index, q.section, q.image_mime, q.image_data, q.explanation
     FROM attempt_answers aa JOIN questions q ON q.id = aa.question_id
     WHERE aa.attempt_id = ? ORDER BY q.seq
   `).all(attemptId)).questions;
@@ -319,7 +320,8 @@ router.get('/attempts/:id', requireAuth, (req, res) => {
     questionId: r.question_id, seq: r.seq, text: r.text,
     options: [r.option_a, r.option_b, r.option_c, r.option_d],
     selectedIndex: r.selected_index, correctIndex: r.correct_index, isCorrect: !!r.is_correct,
-    section: sections ? r.section : undefined, image: Sections.imageUrl(r)
+    section: sections ? r.section : undefined, image: Sections.imageUrl(r),
+    explanation: r.explanation || null
   }));
 
   // Shown with the scheme it was graded with (older attempts have none: percentage only).

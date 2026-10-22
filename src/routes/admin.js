@@ -260,7 +260,15 @@ function validateQuestion(q, exam, existing){
   if(options.some(o => !o || o.length > 200 || CONTROL_RE.test(o))) return { error: 'Each answer option must be 1-200 characters.' };
   if(new Set(options.map(o => o.toLowerCase())).size !== 4) return { error: 'The 4 answer options must all be different.' };
   if(!Number.isInteger(q.correctIndex) || q.correctIndex < 0 || q.correctIndex > 3) return { error: 'Choose which option is the correct answer.' };
-  return { clean: { text, options, correctIndex: q.correctIndex, section, image } };
+  // Optional: why the correct answer is right (shown on the results page). Left out when editing = unchanged.
+  let explanation = existing ? (existing.explanation ?? null) : '';
+  if(q.explanation !== undefined && q.explanation !== null){
+    if(typeof q.explanation !== 'string') return { error: 'The explanation could not be read.' };
+    explanation = q.explanation.trim();
+    if(explanation.length > 1000) return { error: 'The explanation must be at most 1000 characters.' };
+    if(CONTROL_RE.test(explanation)) return { error: 'The explanation contains characters that are not allowed.' };
+  }
+  return { clean: { text, options, correctIndex: q.correctIndex, section, image, explanation } };
 }
 
 // Two questions are "the same" (copies in different sets) when their text AND image match.
@@ -283,10 +291,10 @@ function leastFullSet(counts){
 function insertQuestion(examId, setNumber, clean){
   const seq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM questions WHERE exam_id = ? AND set_number = ?').get(examId, setNumber).n;
   db.prepare(`
-    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    INSERT INTO questions (exam_id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, image_mime, image_data, explanation, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(examId, setNumber, seq, clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex,
-    clean.section, clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null);
+    clean.section, clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null, clean.explanation);
 }
 function markAdminManaged(examId){
   db.prepare("UPDATE exams SET source = 'admin' WHERE id = ?").run(examId);
@@ -296,7 +304,7 @@ router.get('/exams/:id/questions', (req, res) => {
   const id = toId(req.params.id);
   if(!id || !db.prepare('SELECT 1 FROM exams WHERE id = ?').get(id)) return fail(res, 404, 'Certificate not found.');
   const rows = db.prepare(`
-    SELECT id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section,
+    SELECT id, set_number, seq, text, option_a, option_b, option_c, option_d, correct_index, section, explanation,
            COALESCE(length(image_data), 0) AS image_bytes
     FROM questions WHERE exam_id = ? AND active = 1 ORDER BY set_number, seq
   `).all(id);
@@ -310,7 +318,7 @@ router.get('/exams/:id/questions', (req, res) => {
     questions: rows.map(r => ({
       id: r.id, set: r.set_number, seq: r.seq, text: r.text,
       options: [r.option_a, r.option_b, r.option_c, r.option_d], correctIndex: r.correct_index,
-      section: r.section, hasImage: r.image_bytes > 0,
+      section: r.section, hasImage: r.image_bytes > 0, explanation: r.explanation || '',
       alsoInSets: [...new Set(setsByKey.get(questionKey(r.text, r.image_bytes)).filter(s => s !== r.set_number))]
     }))
   });
@@ -370,10 +378,10 @@ router.put('/questions/:id', (req, res) => {
     if(clash) return fail(res, 400, `Set ${t.set_number} already contains a question with this exact text.`);
   }
   db.transaction(() => {
-    const up = db.prepare('UPDATE questions SET text = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, correct_index = ?, section = ?, image_mime = ?, image_data = ? WHERE id = ?');
+    const up = db.prepare('UPDATE questions SET text = ?, option_a = ?, option_b = ?, option_c = ?, option_d = ?, correct_index = ?, section = ?, image_mime = ?, image_data = ?, explanation = ? WHERE id = ?');
     for(const t of targets){
       up.run(clean.text, clean.options[0], clean.options[1], clean.options[2], clean.options[3], clean.correctIndex, clean.section,
-        clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null, t.id);
+        clean.image ? clean.image.mime : null, clean.image ? clean.image.buf : null, clean.explanation, t.id);
     }
   })();
   markAdminManaged(row.exam_id);
