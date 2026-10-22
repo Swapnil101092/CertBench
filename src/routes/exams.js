@@ -93,7 +93,7 @@ router.get('/:slug/sets', requireAuth, (req, res) => {
       questionCount: row ? row.question_count : 0,
       bestScorePct: best ? best.best_score : null,
       attemptCount: best ? best.attempt_count : 0,
-      locked: n > 1 && !passedSets.has(n - 1)
+      locked: !exam.sets_unlocked && n > 1 && !passedSets.has(n - 1)
     });
   }
 
@@ -133,7 +133,8 @@ router.post('/:slug/start', requireAuth, startLimiter, (req, res) => {
     return res.status(402).json({ error: 'Please enroll and complete payment before starting this exam.' });
   }
 
-  if(setNumber > 1){
+  // Unless the admin opened every set for this exam, Set N needs a pass on Set N-1.
+  if(setNumber > 1 && !exam.sets_unlocked){
     const passedPrevious = db.prepare(`
       SELECT 1 FROM attempts
       WHERE user_id = ? AND exam_id = ? AND set_number = ? AND finished_at IS NOT NULL AND passed = 1

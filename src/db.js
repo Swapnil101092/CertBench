@@ -140,6 +140,8 @@ try{
   raw.exec(`UPDATE exams SET marking = '{"correct":4,"wrong":-1,"unanswered":0}' WHERE slug = 'viteee'`);
 }catch(e){}
 try{ raw.exec('ALTER TABLE attempts ADD COLUMN marking TEXT'); }catch(e){}
+// exams.sets_unlocked: 1 = every practice set is open from the start; 0 = pass Set N to unlock Set N+1.
+try{ raw.exec('ALTER TABLE exams ADD COLUMN sets_unlocked INTEGER NOT NULL DEFAULT 0'); }catch(e){}
 try{ raw.exec('ALTER TABLE attempts ADD COLUMN marks INTEGER'); }catch(e){}
 try{ raw.exec('ALTER TABLE attempts ADD COLUMN max_marks INTEGER'); }catch(e){}
 try{
