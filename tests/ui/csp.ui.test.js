@@ -60,3 +60,21 @@ test('admin page loads with no CSP violations', async () => {
   assert.deepEqual(await violations(page), []);
   await ctx.close();
 });
+
+test('admin image uploads work under the CSP (the browser previews and resizes them first)', async () => {
+  const u = validUser();
+  await srv.signUp(u);
+  srv.sql('UPDATE users SET is_admin = 1 WHERE username = ?', u.username);
+  const token = (await srv.api('/auth/login', { method: 'POST', body: { username: u.username, password: u.password } })).data.token;
+  const { ctx, page } = await watchedPage(token);
+  await page.goto(srv.base + '/admin');
+  await page.click('button:has-text("Site settings")');
+  // A real 64x48 PNG, made in the page.
+  const png = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 64; c.height = 48; const g = c.getContext('2d'); g.fillStyle = '#3366cc'; g.fillRect(0, 0, 64, 48); return c.toDataURL('image/png').split(',')[1]; });
+  await page.setInputFiles('input.adm-file', { name: 'team.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  await page.click('button:has-text("Upload photo")');
+  await page.waitForSelector('text=Photo uploaded');
+  assert.deepEqual(await violations(page), []);
+  assert.equal((await srv.api('/settings/public')).data.aboutPhotos.length, 1);
+  await ctx.close();
+});
