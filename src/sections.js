@@ -63,16 +63,19 @@ function arrange(sections, questions){
   return { questions: ordered, groups };
 }
 
-// Correct / total per section, for results.
-function breakdown(sections, detail){
+// Correct / total per section, for results. With a marking scheme, also the section's marks.
+function breakdown(sections, detail, marking){
   if(!sections) return null;
-  const rows = sections.map(s => ({ name: s.name, correct: 0, total: 0 }));
-  for(const d of detail){
-    const r = rows[indexFor(sections, d.section)];
-    r.total++;
-    if(d.isCorrect) r.correct++;
-  }
-  return rows.filter(r => r.total > 0);
+  const Marking = require('./marking');
+  const rows = sections.map(() => []);
+  for(const d of detail) rows[indexFor(sections, d.section)].push(d);
+  return sections.map((s, i) => {
+    if(!rows[i].length) return null;
+    const sc = Marking.score(marking || null, rows[i]);
+    const row = { name: s.name, correct: sc.correctCount, total: sc.total };
+    if(marking) Object.assign(row, { wrong: sc.wrongCount, unanswered: sc.unansweredCount, marks: sc.marks, maxMarks: sc.maxMarks });
+    return row;
+  }).filter(Boolean);
 }
 
 function imageUrl(row){

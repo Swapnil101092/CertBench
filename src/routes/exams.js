@@ -4,6 +4,7 @@ const db = require('../db');
 const { requireAuth, optionalAuth } = require('../auth');
 const Sections = require('../sections');
 const Audience = require('../audience');
+const Marking = require('../marking');
 
 const router = express.Router();
 const SET_COUNT = 5;
@@ -22,7 +23,7 @@ function hasPaidEnrollment(userId, examId){
 router.get('/', optionalAuth, (req, res) => {
   const exams = db.prepare(`
     SELECT e.id, e.slug, e.name, e.description, e.duration_minutes, e.pass_pct, e.color, e.short_label,
-           e.price_inr_paise, e.sections, e.audience,
+           e.price_inr_paise, e.sections, e.audience, e.marking,
            (SELECT COALESCE(MAX(c), 0) FROM (
               SELECT COUNT(*) AS c FROM questions WHERE exam_id = e.id AND active = 1 GROUP BY set_number
            )) AS question_count,
@@ -48,6 +49,7 @@ router.get('/', optionalAuth, (req, res) => {
     exams: exams.filter(e => !viewer || e.audience === viewer || enrolledSlugs.has(e.slug)).map(e => ({
       ...e,
       sections: Sections.parse(e.sections),
+      marking: Marking.parse(e.marking),
       enrolled: enrolledSlugs.has(e.slug)
     }))
   });
@@ -99,7 +101,7 @@ router.get('/:slug/sets', requireAuth, (req, res) => {
     exam: {
       slug: exam.slug, name: exam.name, durationMinutes: exam.duration_minutes,
       passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label,
-      sections: Sections.parse(exam.sections)
+      sections: Sections.parse(exam.sections), marking: Marking.parse(exam.marking)
     },
     sets
   });
@@ -169,7 +171,8 @@ router.post('/:slug/start', requireAuth, startLimiter, (req, res) => {
     attemptId: info.lastInsertRowid,
     exam: {
       slug: exam.slug, name: exam.name, durationMinutes: exam.duration_minutes,
-      passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label
+      passPct: exam.pass_pct, color: exam.color, shortLabel: exam.short_label,
+      marking: Marking.parse(exam.marking)
     },
     setNumber,
     // Sectioned exams: the sections in order, each with its own time limit. Questions come grouped
@@ -184,6 +187,15 @@ router.post('/:slug/start', requireAuth, startLimiter, (req, res) => {
     }))
   });
 });
+
+// The score part of a result. marking/marks/maxMarks are null for exams scored by percentage only.
+function resultScore(sc, marking){
+  return {
+    correctCount: sc.correctCount, wrongCount: sc.wrongCount, unansweredCount: sc.unansweredCount,
+    total: sc.total, scorePct: sc.scorePct,
+    marking: marking || null, marks: sc.marks, maxMarks: sc.maxMarks
+  };
+}
 
 // ---- POST /api/exams/attempts/:id/submit  (auth, server-side grading) ----
 router.post('/attempts/:id/submit', requireAuth, (req, res) => {
@@ -215,15 +227,18 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
     VALUES (?, ?, ?, ?)
   `);
 
-  let correctCount = 0;
+  // Graded with the exam's marking scheme as it is now, which is saved with the attempt.
+  const marking = Marking.parse(exam.marking);
   const detail = [];
+  let sc;
 
   const run = db.transaction(() => {
     for(const q of questions){
       const raw = answers[String(q.id)];
-      const selected = (raw === undefined || raw === null) ? null : Number(raw);
-      const isCorrect = selected === q.correct_index ? 1 : 0;
-      if(isCorrect) correctCount++;
+      // Only option 0-3 counts as an answer; anything else is "not answered" (so it isn't marked wrong).
+      const n = (raw === undefined || raw === null || raw === '') ? NaN : Number(raw);
+      const selected = Number.isInteger(n) && n >= 0 && n <= 3 ? n : null;
+      const isCorrect = selected !== null && selected === q.correct_index ? 1 : 0;
       insertAnswer.run(attemptId, q.id, selected, isCorrect);
       detail.push({
         questionId: q.id, seq: q.seq, text: q.text,
@@ -232,26 +247,24 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
         section: sections ? q.section : undefined, image: Sections.imageUrl(q)
       });
     }
-    const total = questions.length;
-    const scorePct = total ? Math.round((correctCount / total) * 100) : 0;
-    const passed = scorePct >= exam.pass_pct ? 1 : 0;
+    sc = Marking.score(marking, detail);
+    const passed = sc.scorePct >= exam.pass_pct ? 1 : 0;
     db.prepare(`
-      UPDATE attempts SET finished_at = datetime('now'), correct_count = ?, total_count = ?, score_pct = ?, passed = ?
+      UPDATE attempts SET finished_at = datetime('now'), correct_count = ?, total_count = ?, score_pct = ?, passed = ?,
+                          marking = ?, marks = ?, max_marks = ?
       WHERE id = ?
-    `).run(correctCount, total, scorePct, passed, attemptId);
+    `).run(sc.correctCount, sc.total, sc.scorePct, passed, marking ? JSON.stringify(marking) : null, sc.marks, sc.maxMarks, attemptId);
   });
   run();
 
-  const total = questions.length;
-  const scorePct = total ? Math.round((correctCount / total) * 100) : 0;
   res.json({
     attemptId,
     examName: exam.name,
     setNumber: attempt.set_number,
-    correctCount, total, scorePct,
-    passed: scorePct >= exam.pass_pct,
+    ...resultScore(sc, marking),
+    passed: sc.scorePct >= exam.pass_pct,
     passPct: exam.pass_pct,
-    sections: Sections.breakdown(sections, detail),
+    sections: Sections.breakdown(sections, detail, marking),
     detail
   });
 });
@@ -260,7 +273,7 @@ router.post('/attempts/:id/submit', requireAuth, (req, res) => {
 router.get('/attempts/mine', requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT a.id, a.set_number, a.started_at, a.finished_at,
-           a.correct_count, a.total_count, a.score_pct, a.passed,
+           a.correct_count, a.total_count, a.score_pct, a.passed, a.marks, a.max_marks,
            e.slug, e.name, e.color, e.short_label, e.pass_pct
     FROM attempts a JOIN exams e ON e.id = a.exam_id
     WHERE a.user_id = ? AND a.finished_at IS NOT NULL
@@ -280,6 +293,7 @@ router.get('/attempts/mine', requireAuth, (req, res) => {
       correctCount: r.correct_count,
       total: r.total_count,
       scorePct: r.score_pct,
+      marks: r.marks, maxMarks: r.max_marks,   // null unless the exam uses a marking scheme
       passed: !!r.passed,
       passPct: r.pass_pct
     }))
@@ -307,13 +321,19 @@ router.get('/attempts/:id', requireAuth, (req, res) => {
     section: sections ? r.section : undefined, image: Sections.imageUrl(r)
   }));
 
+  // Shown with the scheme it was graded with (older attempts have none: percentage only).
+  const marking = Marking.parse(attempt.marking);
+  const sc = Marking.score(marking, detail);
   res.json({
     attemptId,
     examName: exam.name,
     setNumber: attempt.set_number,
+    ...resultScore(sc, marking),
+    // The score and pass/fail as recorded when it was submitted.
     correctCount: attempt.correct_count, total: attempt.total_count, scorePct: attempt.score_pct,
+    marks: marking ? attempt.marks : null, maxMarks: marking ? attempt.max_marks : null,
     passed: !!attempt.passed, passPct: exam.pass_pct,
-    sections: Sections.breakdown(sections, detail),
+    sections: Sections.breakdown(sections, detail, marking),
     detail
   });
 });

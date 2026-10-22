@@ -20,6 +20,7 @@ const VITEEE_SECTIONS = [
 
 const META = [
   { slug: 'viteee', name: 'VITEEE – VIT Engineering Entrance Exam', short_label: 'VIT', color: '#1e40af', price_inr: 499, audience: 'student',
+    marking: { correct: 4, wrong: -1, unanswered: 0 },   // the real VITEEE scheme: negative marking for wrong answers
     pass_pct: 50, sections: VITEEE_SECTIONS.map(({ name, questions, minutes }) => ({ name, questions, minutes })),
     seedSections: VITEEE_SECTIONS,
     description: 'Full-length VITEEE mock: Mathematics, Physics, Chemistry, Aptitude and English, each section with its own timer, as per the latest pattern.' }
