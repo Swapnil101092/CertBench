@@ -41,6 +41,7 @@ test('viteee: sections one at a time, timer moves on, image shown, per-section r
   await card.locator('button.btn-primary').click();
   await page.waitForSelector('.sections-info');
   assert.match(await page.textContent('.sections-list'), /Mathematics · 40 questions · 50 min/);
+  assert.match(await page.textContent('.marking-note'), /\+4 for a correct answer, −1 for a wrong answer, 0 for one left unanswered/);
   await page.locator('.set-card').first().locator('button').click();
 
   // Mathematics: 40 questions, 50:00 on its own clock.
@@ -73,8 +74,10 @@ test('viteee: sections one at a time, timer moves on, image shown, per-section r
   await page.clock.runFor(10 * 60 * 1000 + 1000);
   await page.waitForSelector('.section-scores');
   const scores = await page.textContent('.section-scores');
-  assert.match(scores, /Mathematics.*\/ 40 correct/);
-  assert.match(scores, /Physics0 \/ 25 correct/);
+  // Marked +4 / -1 / 0: one Mathematics answer (right or wrong), nothing else answered.
+  assert.match(scores, /Mathematics(4|−1) \/ 160 marks(1 correct · 0 wrong|0 correct · 1 wrong) · 39 unanswered/);
+  assert.match(scores, /Physics0 \/ 100 marks0 correct · 0 wrong · 25 unanswered/);
+  assert.match(await page.textContent('.marks-line'), /^(4|−1) \/ 400 marks$/);
   assert.equal(await page.locator('.review-section-head').count(), 4);
   // The built-in bank has 7 diagram questions per set; the Physics one above may be one of them.
   const withImage = new DatabaseSync(srv.dbPath).prepare(`SELECT COUNT(*) AS n FROM questions q JOIN exams e ON e.id = q.exam_id

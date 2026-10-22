@@ -2171,8 +2171,11 @@ function renderSets(){
   if(meta.sections && meta.sections.length){
     wrap.appendChild(el('div',{class:'sections-info'},[
       el('p',{},['Every set has ' + meta.sections.length + ' sections, taken in this order. Each section has its own timer: when it runs out you move on to the next section automatically, and you can’t go back to a finished section.']),
-      el('ol',{class:'sections-list'}, meta.sections.map(sec => el('li',{},[el('b',{},[sec.name]), ' · ' + sec.questions + ' questions · ' + sec.minutes + ' min'])))
+      el('ol',{class:'sections-list'}, meta.sections.map(sec => el('li',{},[el('b',{},[sec.name]), ' · ' + sec.questions + ' questions · ' + sec.minutes + ' min']))),
+      markingNote(meta.marking)
     ]));
+  } else if(meta.marking){
+    wrap.appendChild(el('div',{class:'sections-info'},[markingNote(meta.marking)]));
   }
 
   const grid = el('div',{class:'cert-grid'});
@@ -2264,7 +2267,7 @@ function renderHistory(){
         el('span',{},[a.examName, ' — Set ', String(a.setNumber)])
       ]),
       el('div',{class:'history-cell'},[fmtDate(a.finishedAt)]),
-      el('div',{class:'history-cell history-score'},[`${a.correctCount}/${a.total} (${a.scorePct}%)`]),
+      el('div',{class:'history-cell history-score'},[a.marks !== null && a.marks !== undefined ? `${fmtMarks(a.marks)}/${a.maxMarks} marks (${a.scorePct}%)` : `${a.correctCount}/${a.total} (${a.scorePct}%)`]),
       el('div',{class:'history-cell'},[
         el('span',{class:'pass-tag '+(a.passed?'pass':'fail')},[a.passed ? 'PASS' : 'FAIL'])
       ])
@@ -2386,6 +2389,21 @@ function questionStatus(q){
 function goToQuestion(index){
   state.current = index;
   render();
+}
+
+// Marking schemes (e.g. VITEEE +4 / −1 / 0). Exams without one are scored by percentage correct.
+function signedMarks(n){ return n > 0 ? '+' + n : n < 0 ? '−' + Math.abs(n) : '0'; }
+function fmtMarks(n){ return n < 0 ? '−' + Math.abs(n) : String(n); }   // a total, with a real minus sign
+function markingText(m){
+  return signedMarks(m.correct) + ' for a correct answer, ' + signedMarks(m.wrong) + ' for a wrong answer, ' +
+    signedMarks(m.unanswered) + ' for one left unanswered.';
+}
+function markingNote(m){
+  if(!m) return null;
+  return el('p',{class:'marking-note'},[
+    el('b',{},['Marking: ']), markingText(m),
+    m.wrong < 0 ? ' Wrong answers lose marks, so leave a question blank rather than guess blindly.' : ''
+  ]);
 }
 
 function timerNode(){
@@ -2564,6 +2582,7 @@ function renderReview(){
   ]));
 
   const missed = counts.skipped + counts['not-answered'] + counts['not-visited'];
+  if(bank.marking) panel.appendChild(markingNote(bank.marking));
   if(missed > 0){
     panel.appendChild(el('div',{class:'review-warning'},[
       `You have ${missed} question${missed===1?'':'s'} without an answer. Tap any number below to go back and answer it, or submit as-is.`
@@ -2625,6 +2644,7 @@ function renderResults(){
   const r = state.results;
   const total = r.total, correctCount = r.correctCount, pct = r.scorePct, pass = r.passed;
   const incorrect = total - correctCount;
+  const m = r.marking;   // a marking scheme (e.g. VITEEE +4 / −1 / 0), or null
   const circumference = 2*Math.PI*50;
   const dash = circumference * (pct/100);
   const ringColor = pass ? 'var(--success)' : 'var(--danger)';
@@ -2650,8 +2670,16 @@ function renderResults(){
   const info = el('div',{class:'score-info'},[
     el('div',{class:'pass-tag '+(pass?'pass':'fail')},[pass ? 'PASS' : 'FAIL']),
     el('h2',{},[r.examName]),
-    el('p',{},[pass ? 'You met the passing threshold for this mock exam.' : `You did not reach the ${r.passPct}% passing threshold this time.`]),
-    el('div',{class:'score-stats'},[
+    m ? el('p',{class:'marks-line'},[el('b',{},[fmtMarks(r.marks)]), ' / ' + r.maxMarks + ' marks']) : null,
+    el('p',{},[pass ? 'You met the passing threshold for this mock exam.'
+      : m ? `You needed ${r.passPct}% of the marks (${Math.ceil(r.maxMarks * r.passPct / 100)} / ${r.maxMarks}) to pass.`
+      : `You did not reach the ${r.passPct}% passing threshold this time.`]),
+    m ? el('div',{class:'score-stats'},[
+      el('div',{},[el('b',{},[String(correctCount)]), el('span',{},['Correct (' + signedMarks(m.correct) + ' each)'])]),
+      el('div',{},[el('b',{},[String(r.wrongCount)]), el('span',{},['Wrong (' + signedMarks(m.wrong) + ' each)'])]),
+      el('div',{},[el('b',{},[String(r.unansweredCount)]), el('span',{},['Unanswered (' + signedMarks(m.unanswered) + ')'])]),
+      el('div',{},[el('b',{},[String(total)]), el('span',{},['Questions'])])
+    ]) : el('div',{class:'score-stats'},[
       el('div',{},[el('b',{},[String(correctCount)]), el('span',{},['Correct'])]),
       el('div',{},[el('b',{},[String(incorrect)]), el('span',{},['Incorrect'])]),
       el('div',{},[el('b',{},[String(total)]), el('span',{},['Total'])])
@@ -2660,10 +2688,13 @@ function renderResults(){
   wrap.appendChild(el('div',{class:'score-panel ' + (pass ? 'is-pass' : 'is-fail')},[ring, info]));
   if(r.sections && r.sections.length){
     wrap.appendChild(el('div',{class:'section-scores'}, r.sections.map(sc => {
-      const sp = sc.total ? Math.round(sc.correct / sc.total * 100) : 0;
+      const withMarks = sc.marks !== undefined && sc.marks !== null;
+      const sp = withMarks ? (sc.maxMarks ? Math.max(0, Math.round(sc.marks / sc.maxMarks * 100)) : 0)
+                           : (sc.total ? Math.round(sc.correct / sc.total * 100) : 0);
       return el('div',{class:'section-score'},[
         el('b',{},[sc.name]),
-        el('span',{},[sc.correct + ' / ' + sc.total + ' correct']),
+        withMarks ? el('span',{class:'section-marks'},[fmtMarks(sc.marks) + ' / ' + sc.maxMarks + ' marks']) : null,
+        el('span',{},[withMarks ? `${sc.correct} correct · ${sc.wrong} wrong · ${sc.unanswered} unanswered` : sc.correct + ' / ' + sc.total + ' correct']),
         el('div',{class:'set-bar', title: sp + '%'},[ el('span',{style:`width:${sp}%`}) ])
       ]);
     })));
@@ -2681,9 +2712,11 @@ function renderResults(){
     const item = el('div',{class:'review-item '+(d.isCorrect?'correct':'incorrect')});
     item.appendChild(el('p',{class:'review-q'},[`${n}. ${d.text || ''}`]));
     if(d.image) item.appendChild(questionImage(d.image));
-    const yourText = (d.selectedIndex===null||d.selectedIndex===undefined) ? 'No answer selected' : d.options[d.selectedIndex];
+    const unanswered = d.selectedIndex===null||d.selectedIndex===undefined;
+    const yourText = unanswered ? 'No answer selected' : d.options[d.selectedIndex];
     item.appendChild(el('div',{class:'review-row your '+(d.isCorrect?'right':'wrong')},[
-      el('span',{class:'lbl'},['Your answer']), el('span',{},[yourText, d.isCorrect ? '  ✓' : '  ✗'])
+      el('span',{class:'lbl'},['Your answer']), el('span',{},[yourText, d.isCorrect ? '  ✓' : '  ✗']),
+      m ? el('span',{class:'q-marks'},[signedMarks(d.isCorrect ? m.correct : unanswered ? m.unanswered : m.wrong)]) : null
     ]));
     if(!d.isCorrect){
       item.appendChild(el('div',{class:'review-row correctans'},[

@@ -132,6 +132,18 @@ try{ raw.exec('ALTER TABLE questions ADD COLUMN image_data BLOB'); }catch(e){}
 // exams.audience: who the certificate is for. When the column is first added, entrance exams
 // (VITEEE and JEE subjects) become Students' and everything else IT Professionals'.
 try{ raw.exec('ALTER TABLE users ADD COLUMN account_type TEXT'); }catch(e){}
+// exams.marking: JSON marking scheme ({ correct, wrong, unanswered } marks), NULL = percentage correct.
+// When the column is first added, VITEEE gets its real scheme (+4 / -1 / 0).
+// attempts.marking keeps the scheme an attempt was graded with; attempts.marks / max_marks its marks.
+try{
+  raw.exec('ALTER TABLE exams ADD COLUMN marking TEXT');
+  raw.exec(`UPDATE exams SET marking = '{"correct":4,"wrong":-1,"unanswered":0}' WHERE slug = 'viteee'`);
+}catch(e){}
+try{ raw.exec('ALTER TABLE attempts ADD COLUMN marking TEXT'); }catch(e){}
+// exams.sets_unlocked: 1 = every practice set is open from the start; 0 = pass Set N to unlock Set N+1.
+try{ raw.exec('ALTER TABLE exams ADD COLUMN sets_unlocked INTEGER NOT NULL DEFAULT 0'); }catch(e){}
+try{ raw.exec('ALTER TABLE attempts ADD COLUMN marks INTEGER'); }catch(e){}
+try{ raw.exec('ALTER TABLE attempts ADD COLUMN max_marks INTEGER'); }catch(e){}
 try{
   raw.exec("ALTER TABLE exams ADD COLUMN audience TEXT NOT NULL DEFAULT 'professional'");
   raw.exec("UPDATE exams SET audience = 'student' WHERE slug = 'viteee' OR short_label IN ('VIT', 'PHY', 'CHEM', 'MATH')");

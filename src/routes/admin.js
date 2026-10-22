@@ -63,7 +63,7 @@ function describeExams(onlyId){
       shortLabel: e.short_label, color: e.color, audience: e.audience,
       durationMinutes: e.duration_minutes, passPct: e.pass_pct,
       priceInr: e.price_inr_paise / 100,
-      active: !!e.active, source: e.source,
+      active: !!e.active, source: e.source, setsUnlocked: !!e.sets_unlocked,
       sections, sectionCounts,
       setCounts, totalQuestions: setCounts.reduce((a, b) => a + b, 0),
       paidEnrollments: paid ? paid.c : 0, attempts: att ? att.c : 0
@@ -122,6 +122,12 @@ function validateExam(body, creating){
     else v.audience = b.audience;
   }
 
+  // Every practice set open from the start (no need to pass the one before). Left out = unchanged / off.
+  if(b.setsUnlocked !== undefined){
+    if(typeof b.setsUnlocked !== 'boolean') errors.setsUnlocked = 'Choose whether all sets are open.';
+    else v.sets_unlocked = b.setsUnlocked ? 1 : 0;
+  }
+
   const price = b.priceInr;
   if(typeof price !== 'number' || !Number.isFinite(price) || price < 0 || price > 100000 || Math.abs(price * 100 - Math.round(price * 100)) > 1e-6){
     errors.priceInr = 'Price must be 0 (free) up to 100000, with at most 2 decimals.';
@@ -146,10 +152,10 @@ router.post('/exams', (req, res) => {
   if(Object.keys(errors).length) return fail(res, 400, 'Please fix the highlighted fields.', { fields: errors });
   // New certificates start hidden ("draft") until they have questions and you publish them.
   const info = db.prepare(`
-    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, audience, active, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
+    INSERT INTO exams (slug, name, description, duration_minutes, pass_pct, color, short_label, price_inr_paise, sections, audience, sets_unlocked, active, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'admin')
   `).run(values.slug, values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
-    values.sections ? JSON.stringify(values.sections) : null, values.audience || 'professional');
+    values.sections ? JSON.stringify(values.sections) : null, values.audience || 'professional', values.sets_unlocked || 0);
   audit(req, 'exam.create', `${values.slug} ("${values.name}")`);
   res.status(201).json({ exam: describeExams(info.lastInsertRowid)[0] });
 });
@@ -169,10 +175,12 @@ router.put('/exams/:id', (req, res) => {
   const renames = before.map((s, i) => after[i] && after[i].name !== s.name && !after.some(a => a.name === s.name) ? [s.name, after[i].name] : null).filter(Boolean);
   db.transaction(() => {
     db.prepare(`
-      UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, sections = ?, audience = ?, source = 'admin'
+      UPDATE exams SET name = ?, description = ?, duration_minutes = ?, pass_pct = ?, color = ?, short_label = ?, price_inr_paise = ?, sections = ?, audience = ?,
+                       sets_unlocked = ?, source = 'admin'
       WHERE id = ?
     `).run(values.name, values.description, values.duration_minutes, values.pass_pct, values.color, values.short_label, values.price_inr_paise,
-      values.sections ? JSON.stringify(values.sections) : null, values.audience || exam.audience, id);
+      values.sections ? JSON.stringify(values.sections) : null, values.audience || exam.audience,
+      values.sets_unlocked !== undefined ? values.sets_unlocked : exam.sets_unlocked, id);
     for(const [from, to] of renames) db.prepare('UPDATE questions SET section = ? WHERE exam_id = ? AND section = ?').run(to, id, from);
   })();
   audit(req, 'exam.update', `${exam.slug}`);

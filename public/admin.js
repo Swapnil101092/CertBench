@@ -238,7 +238,7 @@ function viewExams(){
     if(!rows.length) tbody.appendChild(el('tr', {}, [ el('td', { colspan: '7', class: 'adm-empty' }, ['No certificates match “' + S.examQuery.trim() + '”.']) ]));
     rows.forEach(function(e){
       tbody.appendChild(el('tr', {}, [
-        el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug + ' · for ' + (e.audience === 'student' ? 'Students' : 'IT Professionals')]) ]) ]) ]),
+        el('td', {}, [ el('div', { class: 'adm-name-cell' }, [ badge(e), el('div', {}, [ el('div', { class: 'adm-strong' }, [e.name]), el('div', { class: 'adm-hint' }, ['/' + e.slug + ' · for ' + (e.audience === 'student' ? 'Students' : 'IT Professionals') + (e.setsUnlocked ? ' · all sets open' : '')]) ]) ]) ]),
         el('td', {}, [rupees(e.priceInr)]),
         el('td', {}, [e.durationMinutes + ' min · ' + e.passPct + '%']),
         el('td', {}, [ el('span', { class: 'adm-mono' }, [e.setCounts.join(' / ')]), ' (' + e.totalQuestions + ' total)' ]),
@@ -270,7 +270,7 @@ function examFormFields(exam, creating){
       el('div', { class: 'adm-err', 'data-for': key })
     ]);
   }
-  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '', sections: null, audience: 'professional' };
+  var e = exam || { name: '', description: '', shortLabel: '', color: '#22c9a3', durationMinutes: 60, passPct: 70, priceInr: 0, slug: '', sections: null, audience: 'professional', setsUnlocked: false };
   inputs.name = el('input', { class: 'adm-input', type: 'text', maxlength: '80', value: e.name });
   inputs.description = el('textarea', { class: 'adm-input', rows: '3', maxlength: '300', value: e.description });
   inputs.shortLabel = el('input', { class: 'adm-input adm-narrow', type: 'text', maxlength: '4', value: e.shortLabel });
@@ -279,6 +279,7 @@ function examFormFields(exam, creating){
   inputs.passPct = el('input', { class: 'adm-input adm-narrow', type: 'number', min: '1', max: '100', step: '1', value: String(e.passPct) });
   inputs.priceInr = el('input', { class: 'adm-input adm-narrow', type: 'number', min: '0', max: '100000', step: '0.01', value: String(e.priceInr) });
   inputs.audience = audienceSelect(e.audience || 'professional', false);
+  inputs.setsUnlocked = el('input', { type: 'checkbox', checked: !!e.setsUnlocked });
 
   var slugField = null;
   if(creating){
@@ -317,6 +318,11 @@ function examFormFields(exam, creating){
       field('priceInr', 'Price (₹)', inputs.priceInr, '0 = free')
     ]),
     field('audience', 'Who is it for?', inputs.audience, 'Students and IT Professionals each see only their own certificates. Admins see all of them.'),
+    el('div', { class: 'adm-field' }, [
+      el('label', { class: 'adm-check' }, [inputs.setsUnlocked, ' Open all practice sets from the start']),
+      el('div', { class: 'adm-hint' }, ['Off: Set 2 unlocks after passing Set 1, and so on. On: people can take any set in any order.']),
+      el('div', { class: 'adm-err', 'data-for': 'setsUnlocked' })
+    ]),
     sections.node
   ]);
 
@@ -327,7 +333,7 @@ function examFormFields(exam, creating){
       var body = {
         name: inputs.name.value, description: inputs.description.value, shortLabel: inputs.shortLabel.value,
         color: inputs.color.value, durationMinutes: num(inputs.durationMinutes), passPct: num(inputs.passPct), priceInr: num(inputs.priceInr),
-        sections: sections.read(), audience: inputs.audience.value
+        sections: sections.read(), audience: inputs.audience.value, setsUnlocked: inputs.setsUnlocked.checked
       };
       if(inputs.slug) body.slug = inputs.slug.value;
       return body;
