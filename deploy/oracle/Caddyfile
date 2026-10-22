@@ -1,0 +1,5 @@
+# Written by deploy/oracle/setup.sh, which puts the domain (HTTPS) or :80 (plain HTTP) on the next line.
+__SITE__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}

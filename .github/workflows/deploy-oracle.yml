@@ -1,0 +1,60 @@
+# Deploys every push to develop to the Oracle Cloud VM (see deploy/oracle/README.md).
+# Does nothing until the ORACLE_HOST repository variable is set.
+#
+# Repository variables (Settings > Secrets and variables > Actions > Variables):
+#   ORACLE_HOST   the VM's public IP address
+#   ORACLE_USER   SSH user, defaults to ubuntu
+#   DOMAIN        the site's domain; leave unset to serve plain HTTP on the IP while testing
+# Repository secrets:
+#   ORACLE_SSH_KEY  the private key that logs in to the VM
+#   CERTBENCH_ENV   the app's variables, one KEY=value per line (Railway > Variables > Raw Editor)
+name: Deploy to Oracle
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-oracle
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.ORACLE_HOST != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ vars.ORACLE_HOST }}
+      SSH_USER: ${{ vars.ORACLE_USER || 'ubuntu' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_oracle
+          chmod 600 ~/.ssh/id_oracle
+          ssh-keyscan -T 15 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host %s\n  User %s\n  IdentityFile ~/.ssh/id_oracle\n  ServerAliveInterval 30\n' "$HOST" "$SSH_USER" > ~/.ssh/config
+
+      - name: Copy code
+        run: |
+          ssh "$HOST" 'command -v rsync >/dev/null || sudo apt-get install -y -qq rsync >/dev/null; sudo install -d -o "$USER" -g "$USER" /opt/certbench'
+          rsync -az --delete --exclude .git --exclude node_modules --exclude data --exclude .env ./ "$HOST:/opt/certbench/"
+
+      - name: Set up server and environment
+        env:
+          CERTBENCH_ENV: ${{ secrets.CERTBENCH_ENV }}
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: printf '%s' "$CERTBENCH_ENV" | ssh "$HOST" "sudo DOMAIN='$DOMAIN' bash /opt/certbench/deploy/oracle/setup.sh"
+
+      - name: Install dependencies and restart
+        run: |
+          ssh "$HOST" 'cd /opt/certbench && npm ci --omit=dev --no-audit --no-fund && sudo systemctl restart certbench'
+
+      - name: Check the site answers
+        run: |
+          ssh "$HOST" 'for i in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:3000/ && { echo "CertBench is up"; exit 0; }; sleep 2; done; sudo journalctl -u certbench -n 50 --no-pager; exit 1'

@@ -1,0 +1,22 @@
+[Unit]
+Description=CertBench
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=certbench
+Group=certbench
+WorkingDirectory=/opt/certbench
+EnvironmentFile=/etc/certbench/certbench.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/certbench /var/backups/certbench
+
+[Install]
+WantedBy=multi-user.target
