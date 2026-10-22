@@ -283,7 +283,13 @@ from the website itself.
 ## 3. Put it on the actual internet
 
 The simplest path is a host that runs a persistent Node process with a writable disk (so the
-SQLite file survives restarts): **Railway** or **Render** both work. The persistent storage this
+SQLite file survives restarts).
+
+**CertBench's live site runs on an Oracle Cloud Always Free VM** and deploys on every push to
+`develop`. The full setup (account, VM, GitHub secrets, copying data over) is in
+[`deploy/oracle/README.md`](deploy/oracle/README.md).
+
+**Railway** or **Render** also work. The persistent storage this
 needs may require a paid plan on some hosts, so check their current pricing. Without it, every
 redeploy starts from an empty database and all accounts and results are lost.
 
