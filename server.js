@@ -24,7 +24,7 @@ const CSP = [
   "script-src 'self' https://*.razorpay.com",
   "frame-src https://*.razorpay.com",
   "connect-src 'self' https://*.razorpay.com",
-  "img-src 'self' data: https:",
+  "img-src 'self' data: blob: https:",       // blob: = admin image uploads, previewed and resized in the browser
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "worker-src 'self'",
