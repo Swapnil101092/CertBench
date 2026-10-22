@@ -573,6 +573,7 @@ function buildQuestionRow(x){
     el('ol', { class: 'adm-q-opts', type: 'A' }, x.options.map(function(o, i){
       return el('li', { class: i === x.correctIndex ? 'correct' : '' }, [o + (i === x.correctIndex ? '  ✓ correct' : '')]);
     })),
+    x.explanation ? el('div', { class: 'adm-q-why' }, [el('b', {}, ['Why: ']), x.explanation]) : null,
     el('div', { class: 'adm-q-actions' }, [
       el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){ S.editingQ = x.id; replaceQuestionsSection(); } }, ['Edit']),
       el('button', { class: 'btn btn-danger adm-small', type: 'button', onclick: function(){ removeQuestion(x); } }, ['Delete'])
@@ -675,20 +676,24 @@ function questionFields(q){
     opts.push(input); radios.push(radio);
     return el('div', { class: 'adm-opt' }, [ radio, el('span', { class: 'adm-opt-letter' }, ['ABCD'.charAt(i)]), input ]);
   });
+  var why = el('textarea', { class: 'adm-input', rows: '3', maxlength: '1000', placeholder: 'Why the correct answer is right (optional). Students see this on their results.', value: q ? q.explanation || '' : '' });
   var node = el('div', { class: 'adm-qform' }, [
     sectionSel ? el('div', { class: 'adm-field' }, [ el('label', {}, ['Section', sectionSel]) ]) : null,
     text, imageField
-  ].concat(rows, [ el('div', { class: 'adm-hint' }, ['Select the circle next to the correct answer.']) ]));
+  ].concat(rows, [
+    el('div', { class: 'adm-hint' }, ['Select the circle next to the correct answer.']),
+    el('div', { class: 'adm-field' }, [ el('label', {}, ['Explanation', why]) ])
+  ]));
   return {
     node: node,
     read: function(){
       var idx = -1; radios.forEach(function(r, i){ if(r.checked) idx = i; });
-      var body = { text: text.value, options: opts.map(function(o){ return o.value; }), correctIndex: idx };
+      var body = { text: text.value, options: opts.map(function(o){ return o.value; }), correctIndex: idx, explanation: why.value };
       if(sectionSel){ body.section = sectionSel.value; S.lastSection = sectionSel.value; }
       if(image !== undefined) body.image = image;
       return body;
     },
-    reset: function(){ text.value = ''; opts.forEach(function(o){ o.value = ''; }); radios.forEach(function(r, i){ r.checked = i === 0; }); image = undefined; showPreview(null); text.focus(); }
+    reset: function(){ text.value = ''; why.value = ''; opts.forEach(function(o){ o.value = ''; }); radios.forEach(function(r, i){ r.checked = i === 0; }); image = undefined; showPreview(null); text.focus(); }
   };
 }
 
@@ -739,9 +744,9 @@ function buildAddPanel(){
   ]);
 }
 
-var TEMPLATE_CSV = 'question,option_a,option_b,option_c,option_d,correct\n' +
-  '"Which AWS service stores objects?","Amazon S3","Amazon EC2","AWS Lambda","Amazon VPC",A\n' +
-  '"What does CI stand for in CI/CD?","Continuous Integration","Central Intelligence","Code Inspection","Container Isolation",A\n';
+var TEMPLATE_CSV = 'question,option_a,option_b,option_c,option_d,correct,explanation\n' +
+  '"Which AWS service stores objects?","Amazon S3","Amazon EC2","AWS Lambda","Amazon VPC",A,"S3 is object storage; EC2 is compute, Lambda runs functions and VPC is networking."\n' +
+  '"What does CI stand for in CI/CD?","Continuous Integration","Central Intelligence","Code Inspection","Container Isolation",A,"CI means merging and testing code changes continuously, many times a day."\n';
 
 function buildImportPanel(){
   var area = el('textarea', { class: 'adm-input adm-csv', rows: '8', placeholder: 'Paste CSV here, or choose a file below' });
@@ -760,7 +765,7 @@ function buildImportPanel(){
 
   return el('div', { class: 'adm-panel' }, [
     el('h3', {}, ['Import questions from CSV']),
-    el('p', { class: 'adm-hint' }, ['Columns: question, option_a, option_b, option_c, option_d, correct (A, B, C or D)' + (S.exam.sections ? ', section (' + S.exam.sections.map(function(s){ return s.name; }).join(' / ') + ')' : '') + '. Save from Excel or Google Sheets as CSV. If any row has a problem, nothing is imported and you will see exactly which rows to fix. To add an image to a question, import it and then use Edit.']),
+    el('p', { class: 'adm-hint' }, ['Columns: question, option_a, option_b, option_c, option_d, correct (A, B, C or D)' + (S.exam.sections ? ', section (' + S.exam.sections.map(function(s){ return s.name; }).join(' / ') + ')' : '') + ', and optionally explanation (why the answer is right). Save from Excel or Google Sheets as CSV. If any row has a problem, nothing is imported and you will see exactly which rows to fix. To add an image to a question, import it and then use Edit.']),
     el('div', { class: 'adm-hint' }, ['Only add questions you wrote yourself or have the right to use. Copying real exam questions from the certification providers breaks their rules, and this site tells students its questions are original.']),
     el('div', { class: 'adm-actions' }, [
       el('button', { class: 'btn btn-ghost adm-small', type: 'button', onclick: function(){

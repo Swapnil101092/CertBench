@@ -32,9 +32,10 @@ const ALIASES = {
   c: ['option_c', 'option c', 'optionc', 'c', 'option3', 'option 3', 'answer c'],
   d: ['option_d', 'option d', 'optiond', 'd', 'option4', 'option 4', 'answer d'],
   correct: ['correct', 'answer', 'correct_answer', 'correct answer', 'key', 'correct option'],
-  section: ['section', 'subject']   // optional: only for certificates split into sections
+  section: ['section', 'subject'],   // optional: only for certificates split into sections
+  explanation: ['explanation', 'why', 'reason', 'rationale', 'solution']   // optional: why the correct answer is right
 };
-const OPTIONAL = ['section'];
+const OPTIONAL = ['section', 'explanation'];
 
 // Turns raw rows into { line, text, options, correctIndex } (or { line, error }).
 // `line` is the row number as seen in a spreadsheet (header = row 1).
@@ -52,7 +53,7 @@ function toQuestionRows(rows){
     if(missing.length) return { items: [], headerError: 'Missing column(s): ' + missing.join(', ') + '. Use the template columns: question, option_a, option_b, option_c, option_d, correct.' };
     start = 1;
   } else {
-    idx = { question: 0, a: 1, b: 2, c: 3, d: 4, correct: 5, section: 6 };
+    idx = { question: 0, a: 1, b: 2, c: 3, d: 4, correct: 5, section: 6, explanation: 7 };
     start = 0;
   }
   const items = [];
@@ -68,7 +69,7 @@ function toQuestionRows(rows){
       items.push({ line, error: 'The "correct" column must be A, B, C or D (or 1-4). Found: "' + token + '".' });
       continue;
     }
-    items.push({ line, text: get('question'), options: [get('a'), get('b'), get('c'), get('d')], correctIndex, section: get('section') });
+    items.push({ line, text: get('question'), options: [get('a'), get('b'), get('c'), get('d')], correctIndex, section: get('section'), explanation: get('explanation') });
   }
   return { items };
 }

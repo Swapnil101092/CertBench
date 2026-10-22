@@ -134,6 +134,12 @@ app.use((err, req, res, next) => {
   db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES ('initial_seed_done', datetime('now'))").run();
 })();
 
+// Built-in answer explanations reach questions seeded before they existed.
+(function fillExplanations(){
+  const n = require('./src/explanations').backfill();
+  if(n) console.log(`[SETUP] Added built-in explanations to ${n} question(s).`);
+})();
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`CertBench server listening on port ${PORT}`);

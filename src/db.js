@@ -128,6 +128,9 @@ try{ raw.exec('ALTER TABLE exams ADD COLUMN sections TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN section TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN image_mime TEXT'); }catch(e){}
 try{ raw.exec('ALTER TABLE questions ADD COLUMN image_data BLOB'); }catch(e){}
+// questions.explanation: why the correct answer is right, shown on the results page. NULL = none yet
+// (built-in explanations fill these in on start); '' = none, and an admin cleared it on purpose.
+try{ raw.exec('ALTER TABLE questions ADD COLUMN explanation TEXT'); }catch(e){}
 // users.account_type: 'student' | 'professional' (NULL = not chosen yet; they're asked on next sign-in).
 // exams.audience: who the certificate is for. When the column is first added, entrance exams
 // (VITEEE and JEE subjects) become Students' and everything else IT Professionals'.

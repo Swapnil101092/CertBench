@@ -84,5 +84,9 @@ test('viteee: sections one at a time, timer moves on, image shown, per-section r
     WHERE e.slug = 'viteee' AND q.set_number = 1 AND q.image_data IS NOT NULL`).get().n;
   assert.ok(withImage === 7 || withImage === 8, String(withImage));
   assert.equal(await page.locator('.review-item img.q-image').count(), withImage);
+  // Every answer explains why the correct answer is right; a missed one also shows which answer that was.
+  assert.equal(await page.locator('.review-item .review-why').count(), 100);
+  const missed = page.locator('.review-item.incorrect').last();
+  assert.match(await missed.textContent(), /Correct answer.+Why.{20,}/);
   await ctx.close();
 });

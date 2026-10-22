@@ -2723,6 +2723,11 @@ function renderResults(){
         el('span',{class:'lbl'},['Correct answer']), el('span',{},[d.options[d.correctIndex]])
       ]));
     }
+    if(d.explanation){
+      item.appendChild(el('div',{class:'review-why'},[
+        el('span',{class:'lbl'},[d.isCorrect ? 'Why it’s correct' : 'Why']), el('p',{},[d.explanation])
+      ]));
+    }
     wrap.appendChild(item);
   });
 
